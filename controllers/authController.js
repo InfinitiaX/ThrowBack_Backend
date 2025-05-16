@@ -95,10 +95,8 @@ const register = async (req, res) => {
     console.log("✅ Token saved successfully:", tokenDoc._id);
 
     // Build verification link to redirect to API
-    //const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/verify/${user._id}/${verificationToken}`;
-    const verificationLink =
-   `${process.env.FRONTEND_URL || 'http://localhost:3000'}` +
-   `/verify-email?userId=${user._id}&token=${verificationToken}`;
+    const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/verify/${user._id}/${verificationToken}`;
+   
     try {
       // Send verification email
       await sendEmail(user.email, "Verify your ThrowBack account", verificationLink);
