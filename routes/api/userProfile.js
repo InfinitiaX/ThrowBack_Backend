@@ -13,7 +13,6 @@ const { logAction } = require('../../middlewares/loggingMiddleware');
 router.get('/:id', userProfileController.getUserProfile);
 
 /**
- * @route   GET /api/users/profile/me
  * @desc    Récupérer le profil de l'utilisateur connecté
  * @access  Private
  */

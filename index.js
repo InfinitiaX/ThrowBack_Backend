@@ -232,14 +232,7 @@ app.get('/api/test/db', async (req, res) => {
   }
 });
 
-// ===== Routes de profil utilisateur (optionnel) =====
-try {
-  const userProfileRoutes = require("./routes/api/userProfile");
-  app.use("/api/users", userProfileRoutes);
-  console.log("✅ Routes de profil utilisateur chargées");
-} catch (error) {
-  console.log("⚠️  Routes userProfile non disponibles:", error.message);
-}
+
 
 // ===== Routes Web (pour les vues server-side) =====
 try {
@@ -293,7 +286,14 @@ app.get("/", (req, res) => {
 
 
 // Addition à ajouter dans index.js après les routes API auth
-
+// ===== Routes de profil utilisateur (optionnel) =====
+try {
+  const userProfileRoutes = require("./routes/api/userProfile");
+  app.use("/api/users", userProfileRoutes);
+  console.log("✅ Routes de profil utilisateur chargées");
+} catch (error) {
+  console.log("⚠️  Routes userProfile non disponibles:", error.message);
+}
 // ===== Routes CAPTCHA =====
 const captchaRoutes = require("./routes/api/captcha");
 app.use("/api/captcha", captchaRoutes);
@@ -302,6 +302,10 @@ console.log("✅ Routes CAPTCHA configurées:");
 console.log("- GET  /api/captcha/generate");
 console.log("- POST /api/captcha/verify");
 console.log("- GET  /api/captcha/stats");
+
+
+
+// puis ton handler 404, 500, etc.
 
 
 // ===== Gestion des erreurs 404 =====
@@ -392,6 +396,9 @@ const server = app.listen(PORT, () => {
   console.log(`   API Docs: http://localhost:${PORT}/api`);
   console.log(`\n✅ Serveur prêt à recevoir des requêtes!\n`);
 });
+
+
+
 
 // Export pour les tests
 module.exports = { app, server };

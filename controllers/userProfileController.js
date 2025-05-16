@@ -99,8 +99,8 @@ exports.updateProfile = async (req, res) => {
     
     // Journaliser l'action
     await LogAction.create({
-      type_action: "MODIFICATION_PROFIL",
-      description_action: "Mise à jour du profil utilisateur",
+   type_action: "PROFIL_MODIFIE",
+   description_action: "Mise à jour du profil utilisateur",
       id_user: req.user.id,
       ip_address: req.ip,
       user_agent: req.headers['user-agent'],
@@ -501,8 +501,8 @@ exports.updatePrivacySettings = async (req, res) => {
     
     // Journaliser l'action
     await LogAction.create({
-      type_action: "MISE_A_JOUR_CONFIDENTIALITE",
-      description_action: "Mise à jour des paramètres de confidentialité",
+   type_action: "PROFIL_MODIFIE",
+   description_action: "Mise à jour des paramètres de confidentialité",
       id_user: req.user.id,
       ip_address: req.ip,
       user_agent: req.headers['user-agent'],

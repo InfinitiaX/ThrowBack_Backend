@@ -45,77 +45,26 @@ const protect = async (req, res, next) => {
 };
 
 
-// Middleware for routes that should only be accessible to guests (non-authenticated users)
-const guest = (req, res, next) => {
-  // For API routes, we'll be more lenient with the guest middleware
-  // since password reset doesn't require authentication
+
+exports.protect = async (req, res, next) => {
+  try {
+    const header = req.headers.authorization;
+    if (!header || !header.startsWith('Bearer ')) {
+      return res.status(401).json({ success:false, message:'No token provided.' });
+    }
+    const token = header.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = await User.findById(decoded.id).populate('roles');
+    if (!req.user) throw new Error('User not found');
+    next();
+  } catch (err) {
+    return res.status(401).json({ success:false, message:'Invalid token.' });
+  }
+};
+
+exports.authorize = (...roles) => (req, res, next) => {
+  if (!req.user || !roles.some(r => req.user.roles.map(x=>x.libelle_role).includes(r))) {
+    return res.status(403).json({ success:false, message:'Forbidden' });
+  }
   next();
-};
-
-// Middleware to check user roles
-const authorize = (...roles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Access denied. Authentication required.'
-      });
-    }
-    
-    // Check if user has required role
-    const userRoles = req.user.roles.map(role => role.libelle_role);
-    const hasRole = roles.some(role => userRoles.includes(role));
-    
-    if (!hasRole) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Insufficient permissions.'
-      });
-    }
-    
-    next();
-  };
-};
-
-
-/**
- * Middleware pour vérifier les rôles et permissions
- * @param {Array|String} roles - Rôle(s) autorisé(s)
- */
-exports.authorize = (roles) => {
-  return async (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: "Accès non autorisé. Veuillez vous connecter."
-      });
-    }
-    
-    // Convertir en tableau si c'est une chaîne
-    if (typeof roles === 'string') {
-      roles = [roles];
-    }
-    
-    // Récupérer les infos complètes de l'utilisateur avec ses rôles
-    const user = await User.findById(req.user.id).populate('roles');
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "Utilisateur non trouvé"
-      });
-    }
-    
-    // Vérifier si l'utilisateur a au moins un des rôles requis
-    const userRoles = user.roles.map(role => role.libelle_role);
-    const hasRole = roles.some(role => userRoles.includes(role));
-    
-    if (!hasRole) {
-      return res.status(403).json({
-        success: false,
-        message: "Accès refusé. Vous n'avez pas les permissions nécessaires."
-      });
-    }
-    
-    next();
-  };
 };
