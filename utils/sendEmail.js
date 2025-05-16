@@ -54,10 +54,7 @@ module.exports = async (email, subject, url) => {
 											
 											<hr style="border: none; border-top: 1px solid #eeeeee; margin: 30px 0;">
 											
-											<p style="color: #999999; font-size: 12px; text-align: center;">
-												Having trouble? Copy and paste this link into your browser:<br>
-												<a href="${url}" style="color: #e32929; text-decoration: none; word-break: break-all;">${url}</a>
-											</p>
+											
 											
 											<p style="color: #999999; font-size: 12px; text-align: center; margin-top: 20px;">
 												&copy; 2024 ThrowBack. All rights reserved.

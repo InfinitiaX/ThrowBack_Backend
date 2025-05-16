@@ -95,7 +95,7 @@ const register = async (req, res) => {
     console.log("✅ Token saved successfully:", tokenDoc._id);
 
     // Build verification link to redirect to API
-    const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/verify/${user._id}/${verificationToken}`;
+    const verificationLink = `${process.env.BACKEND_URL || 'https://throwback-backend.onrender.com'}/api/auth/verify/${user._id}/${verificationToken}`;
    
     try {
       // Send verification email
