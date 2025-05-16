@@ -148,16 +148,11 @@ const register = async (req, res) => {
  * @route   POST /api/auth/login
  * @access  Public
  */
-/**
- * @desc    User login with role-based redirection (sans CAPTCHA)
- * @route   POST /api/auth/login
- * @access  Public
- */
 const login = async (req, res) => {
   try {
     console.log("🔑 Login function called");
-
-    const { email, password, remember = false } = req.body;
+    
+    const { email, password, remember = false, captchaId, captchaAnswer } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -166,11 +161,12 @@ const login = async (req, res) => {
       });
     }
 
-    // Récupérer l’utilisateur et son mot de passe
+    // Get user with password and populate roles
     const user = await User.findOne({ email: email.toLowerCase() })
       .select('+mot_de_passe')
       .populate('roles', 'libelle_role');
-
+    
+    // If user doesn't exist
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -178,16 +174,16 @@ const login = async (req, res) => {
       });
     }
 
-    // Vérifier le statut du compte
+    // Check account status
     if (user.statut_compte === "SUSPENDU" || user.statut_compte === "SUPPRIME") {
       return res.status(403).json({
         success: false,
-        message: "This account has been suspended or deleted."
+        message: "This account has been suspended or deleted. Please contact administrator."
       });
     }
 
-    // Gérer le comptage des tentatives de connexion
-    let loginAttempt = await LoginAttempt.findOne({
+    // Find or create login attempt entry
+    let loginAttempt = await LoginAttempt.findOne({ 
       $or: [
         { ip_address: req.ip },
         { id_user: user._id }
@@ -202,80 +198,126 @@ const login = async (req, res) => {
       });
     }
 
-    // Vérifier si le compte est verrouillé
+    // Check if CAPTCHA verification is required (after 3 attempts)
+    const requiresCaptcha = loginAttempt.nb_tentatives >= 3;
+    
+    if (requiresCaptcha) {
+      if (!captchaId || !captchaAnswer) {
+        return res.status(400).json({
+          success: false,
+          message: "CAPTCHA verification is required after multiple failed attempts",
+          captchaRequired: true,
+          captchaError: true
+        });
+      }
+
+      // Verify CAPTCHA
+      console.log("🤖 Verifying CAPTCHA for login...");
+      const captchaResult = captchaGenerator.verifyCaptcha(captchaId, captchaAnswer);
+      
+      if (!captchaResult.valid) {
+        console.log("❌ Invalid CAPTCHA for login:", captchaResult.error);
+        return res.status(400).json({
+          success: false,
+          message: "Invalid CAPTCHA. Please try again.",
+          captchaRequired: true,
+          captchaError: true
+        });
+      }
+      
+      console.log("✅ CAPTCHA verified successfully for login");
+    }
+
+    // Check if account is locked
     if (loginAttempt.estVerrouille && loginAttempt.estVerrouille()) {
       const tempsRestant = loginAttempt.tempsRestantVerrouillage();
+      
       return res.status(403).json({
         success: false,
-        message: `Account temporarily locked. Try again in ${tempsRestant} minutes.`
+        message: `Account temporarily locked due to too many failed attempts. Try again in ${tempsRestant} minutes.`
       });
     }
 
-    // Vérifier le mot de passe
+    // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      // Incrémenter le nombre de tentatives
+      // Increment attempts
       loginAttempt.nb_tentatives += 1;
       loginAttempt.derniere_tentative = Date.now();
       loginAttempt.success = false;
-
-      // Verrouiller si dépasse MAX_LOGIN_ATTEMPTS
+      
+      // Check if account should be locked (after 5 failed attempts)
       if (loginAttempt.nb_tentatives >= MAX_LOGIN_ATTEMPTS) {
         if (loginAttempt.verrouillerCompte) {
           loginAttempt.verrouillerCompte(LOCK_TIME);
         }
-
-        // Journalisation du verrouillage
+        
+        // Log lockout
         await LogAction.create({
           type_action: "COMPTE_VERROUILLE",
           description_action: `Account locked after ${MAX_LOGIN_ATTEMPTS} failed attempts`,
           id_user: user._id,
           ip_address: req.ip,
           user_agent: req.headers['user-agent'],
-          created_by: "SYSTEM"
+          created_by: "SYSTEM",
+          donnees_supplementaires: {
+            captcha_required: requiresCaptcha,
+            captcha_verified: requiresCaptcha && captchaResult?.valid
+          }
         });
-
-        // Mettre à jour le statut de l’utilisateur
+        
+        // Update user status
         user.statut_compte = "VERROUILLE";
         await user.save();
+        
+        await loginAttempt.save();
+        
+        return res.status(403).json({
+          success: false,
+          message: `Account temporarily locked due to too many failed attempts. Try again in ${LOCK_TIME} minutes.`
+        });
       }
-
+      
       await loginAttempt.save();
-
+      
+      // Determine if CAPTCHA is required for next attempt
+      const nextRequiresCaptcha = loginAttempt.nb_tentatives >= 3;
+      
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
-        attemptsLeft: MAX_LOGIN_ATTEMPTS - loginAttempt.nb_tentatives
+        attemptsLeft: MAX_LOGIN_ATTEMPTS - loginAttempt.nb_tentatives,
+        captchaRequired: nextRequiresCaptcha
       });
     }
 
-    // Si le mail n'est pas vérifié
+    // Check if email is verified
     if (!user.statut_verification) {
       return res.status(403).json({
         success: false,
-        message: "Please verify your email before signing in."
+        message: "Please verify your email address before signing in. A new verification link can be requested if needed."
       });
     }
 
-    // Réinitialiser les tentatives après succès
-    if (loginAttempt.reinitialiser) {
+    // Successful login, reset attempts
+    if (loginAttempt && loginAttempt.reinitialiser) {
       loginAttempt.reinitialiser();
       await loginAttempt.save();
     }
 
-    // Réactiver le compte si nécessaire
-    if (["INACTIF", "VERROUILLE"].includes(user.statut_compte)) {
+    // Update account status if necessary
+    if (user.statut_compte === "INACTIF" || user.statut_compte === "VERROUILLE") {
       user.statut_compte = "ACTIF";
     }
 
-    // Mettre à jour la dernière connexion
+    // Update last login
     user.derniere_connexion = Date.now();
     await user.save();
 
-    // Générer le JWT
+    // Generate authentication token
     const token = user.generateAuthToken();
 
-    // Journaliser la connexion réussie
+    // Log successful login
     await LogAction.create({
       type_action: "CONNEXION",
       description_action: "Successful login",
@@ -284,13 +326,21 @@ const login = async (req, res) => {
       user_agent: req.headers['user-agent'],
       created_by: "SYSTEM",
       donnees_supplementaires: {
-        attempts_before_success: loginAttempt.nb_tentatives
+        captcha_required: requiresCaptcha,
+        captcha_verified: requiresCaptcha && captchaResult?.valid,
+        attempts_before_success: loginAttempt?.nb_tentatives || 0
       }
     });
 
-    // Déterminer la redirection selon le rôle
+    // Determine redirection URL based on role
     const userRole = user.roles.length > 0 ? user.roles[0].libelle_role : 'user';
-    const redirectUrl = userRole === 'admin' ? '/admin-dashboard' : '/dashboard';
+    let redirectUrl;
+    
+    if (userRole === 'admin') {
+      redirectUrl = '/admin-dashboard';
+    } else {
+      redirectUrl = '/dashboard';
+    }
 
     res.status(200).json({
       success: true,
@@ -303,7 +353,7 @@ const login = async (req, res) => {
         nom: user.nom,
         prenom: user.prenom,
         photo_profil: user.photo_profil,
-        roles: user.roles.map(r => r.libelle_role)
+        roles: user.roles.map(role => role.libelle_role)
       }
     });
   } catch (error) {
@@ -429,7 +479,7 @@ const forgotPassword = async (req, res) => {
     await user.save();
 
     // Create reset link pointing to API
-    const resetLink = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/verify-reset/${resetToken}`;
+    const resetLink = `${process.env.BACKEND_URL || 'https://throwback-backend.onrender.com'}/api/auth/verify-reset/${resetToken}`;
     
     try {
       // Send reset email
@@ -552,7 +602,7 @@ const resendVerification = async (req, res) => {
     }).save();
 
     // Build verification link pointing to API
-    const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/verify/${user._id}/${verificationToken}`;
+    const verificationLink = `${process.env.BACKEND_URL || 'https://throwback-backend.onrender.com'}/api/auth/verify/${user._id}/${verificationToken}`;
     
     try {
       // Send email
