@@ -23,8 +23,8 @@ const LOCK_TIME = 30;
  */
 const register = async (req, res) => {
   try {
-    console.log("🚀 Register function called");
-    console.log("📦 Request body:", req.body);
+    console.log(" Register function called");
+    console.log(" Request body:", req.body);
 
     const { nom, prenom, email, password, date_naissance, genre, pays, ville } = req.body;
 
@@ -50,14 +50,14 @@ const register = async (req, res) => {
       nom,
       prenom,
       email: email.toLowerCase(),
-      mot_de_passe: password, // Will be hashed by pre-save
+      mot_de_passe: password, 
       date_naissance,
       genre,
       pays,
       ville,
       statut_compte: "ACTIF",
       statut_verification: false,
-      role: 'user' // Attribution directe du rôle user par défaut
+      role: 'user' 
     });
 
     console.log("👤 User before save:", {
