@@ -7,8 +7,8 @@ module.exports = async (email, url) => {
 		const transporter = nodemailer.createTransport({
 			service: 'gmail',
 			auth: {
-				user: process.env.MAIL_USER,  // <— ici
-        		pass: process.env.MAIL_PASS,  // <— et ici
+				user: process.env.EMAIL_USER,  // <— ici EMAIL_PASS
+        		pass: process.env.EMAIL_PASS,  // <— et ici EMAIL_PASS
 			},
 		});
 
@@ -17,7 +17,7 @@ module.exports = async (email, url) => {
 		console.log("SMTP configuration verified successfully");
 
 		await transporter.sendMail({
-			from: `"ThrowBack Team" <${process.env.MAIL_USER}>`,
+			from: `"ThrowBack Team" <${process.env.EMAIL_USER}>`,
 			to: email,
 			subject: "Reset Your Password - ThrowBack",
 			html: `
