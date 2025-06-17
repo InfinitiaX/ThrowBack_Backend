@@ -25,9 +25,9 @@ app.use(cookieParser());
 // ===== Configuration CORS pour React =====
 const corsOptions = {
   origin: [
-    process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com',
-    'https://throwback-frontend.onrender.com',
-    'https://throwback-frontend.onrender.com'
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3000'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -260,11 +260,11 @@ try {
   
   // Routes de fallback pour les pages web
   app.get("/login", (req, res) => {
-    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`);
   });
   
   app.get("/register", (req, res) => {
-    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/register`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/register`);
   });
 }
 
@@ -375,7 +375,7 @@ const server = app.listen(PORT, () => {
   console.log(`\n Serveur ThrowBack lancé avec succès!`);
   console.log(` URL: http://localhost:${PORT}`);
   console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(` Frontend URL: ${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}`);
+  console.log(` Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
   console.log(`\n Routes de test disponibles:`);
   console.log(`   GET  http://localhost:${PORT}/api/test`);
   console.log(`   GET  http://localhost:${PORT}/api/test/db`);
@@ -385,7 +385,7 @@ const server = app.listen(PORT, () => {
   console.log(`   User: ${process.env.EMAIL_USER || 'Non configuré'}`);
   console.log(`   Service: Gmail`);
   console.log(`\n Liens utiles:`);
-  console.log(`   Frontend: ${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}`);
+  console.log(`   Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
   console.log(`   API Docs: http://localhost:${PORT}/api`);
   console.log(`\n Serveur prêt à recevoir des requêtes!\n`);
 });
