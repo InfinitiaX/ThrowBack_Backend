@@ -1,48 +1,33 @@
 // middlewares/optionalAuth.js
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-require('dotenv').config();
 
 /**
  * Middleware d'authentification optionnelle
- * Permet aux endpoints d'être accessibles aux utilisateurs connectés et non-connectés
- * mais ajoute les informations utilisateur si disponibles
+ * Tente de récupérer l'utilisateur à partir du token JWT si présent,
+ * mais continue la requête même si l'authentification échoue
  */
 const optionalAuth = async (req, res, next) => {
   try {
-    const header = req.headers.authorization;
+    const authHeader = req.headers.authorization;
     
-    if (!header || !header.startsWith('Bearer ')) {
-      // Pas de token, continuer sans utilisateur
-      req.user = null;
-      return next();
-    }
-    
-    const token = header.split(' ')[1];
-    
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
       
-      // Récupère l'utilisateur complet
-      const user = await User.findById(decoded.id).populate('roles', 'libelle_role');
-      
-      if (user) {
-        // Expose un objet avec _id **et** id (string) + tous les autres champs
-        req.user = {
-          ...user.toObject(),
-          id: user._id.toString()
-        };
-      } else {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = await User.findById(decoded.id).select('-mot_de_passe');
+      } catch (error) {
+        console.log("Token invalid, but continuing as unauthenticated user");
         req.user = null;
       }
-    } catch (tokenError) {
-      // Token invalide, continuer sans utilisateur
+    } else {
       req.user = null;
     }
     
     next();
-  } catch (err) {
-    console.error('Optional auth middleware error:', err);
+  } catch (error) {
+    console.error("Error in optional auth middleware:", error);
     req.user = null;
     next();
   }

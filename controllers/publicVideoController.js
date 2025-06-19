@@ -1,4 +1,4 @@
-// controllers/publicVideoController.js
+// controllers/publicVideoController.js - VERSION CORRIGÉE
 const Video = require('../models/Video');
 const Comment = require('../models/Comment');
 const Playlist = require('../models/Playlist');
@@ -22,6 +22,8 @@ exports.getPublicVideos = async (req, res, next) => {
       page = 1, 
       limit = 12 
     } = req.query;
+    
+    console.log('🎬 Récupération des vidéos publiques avec filtres:', { type, genre, decade, search, sortBy });
     
     // Build filter object
     const filter = {};
@@ -83,32 +85,60 @@ exports.getPublicVideos = async (req, res, next) => {
       .limit(parseInt(limit))
       .select('-meta.favorisBy -meta.playlists'); // Exclude sensitive data
     
-    // If user is authenticated, check their likes
+    console.log(`📹 ${videos.length} vidéos trouvées sur ${total} au total`);
+    
+    // ⚠️ CORRECTION: Si un utilisateur est connecté, vérifier ses likes
     let userLikes = [];
-    if (req.user) {
-      const videoIds = videos.map(v => v._id);
-      userLikes = await Like.find({
-        type_entite: 'VIDEO',
-        entite_id: { $in: videoIds },
-        utilisateur: req.user._id
-      }).select('entite_id type_action');
+    if (req.user && req.user._id) {
+      try {
+        const videoIds = videos.map(v => v._id);
+        console.log('👤 Utilisateur connecté, vérification des likes pour:', req.user._id);
+        
+        // ⚠️ CORRECTION: Utiliser video_id au lieu de entite_id
+        userLikes = await Like.find({
+          video_id: { $in: videoIds },  // Utiliser video_id
+          utilisateur: req.user._id     // Utiliser utilisateur
+        }).select('video_id type_like');
+        
+        console.log(`❤️ ${userLikes.length} likes trouvés pour l'utilisateur`);
+      } catch (likeError) {
+        console.warn('⚠️ Erreur lors de la récupération des likes (non critique):', likeError.message);
+        userLikes = [];
+      }
     }
     
-    // Add user interaction info to videos
+    // ⚠️ CORRECTION: Ajouter les informations d'interaction utilisateur avec sécurité
     const videosWithInteraction = videos.map(video => {
-      const videoObj = video.toObject();
-      
-      if (req.user) {
-        const userLike = userLikes.find(like => 
-          like.entite_id.equals(video._id)
-        );
-        videoObj.userInteraction = {
-          liked: userLike?.type_action === 'LIKE',
-          disliked: userLike?.type_action === 'DISLIKE'
-        };
+      try {
+        const videoObj = video.toObject();
+        
+        if (req.user && req.user._id) {
+          // ⚠️ CORRECTION: Vérifier que video_id existe et utiliser les bons noms de champs
+          const userLike = userLikes.find(like => 
+            like && 
+            like.video_id && 
+            like.video_id.toString() === video._id.toString()  // Comparaison sécurisée
+          );
+          
+          videoObj.userInteraction = {
+            liked: userLike?.type_like === 'LIKE',
+            disliked: userLike?.type_like === 'DISLIKE'
+          };
+        } else {
+          videoObj.userInteraction = {
+            liked: false,
+            disliked: false
+          };
+        }
+        
+        return videoObj;
+      } catch (videoError) {
+        console.warn('⚠️ Erreur lors du traitement d\'une vidéo:', videoError.message);
+        // Retourner la vidéo sans interactions en cas d'erreur
+        const videoObj = video.toObject();
+        videoObj.userInteraction = { liked: false, disliked: false };
+        return videoObj;
       }
-      
-      return videoObj;
     });
     
     res.json({
@@ -123,14 +153,21 @@ exports.getPublicVideos = async (req, res, next) => {
         hasPrevPage: page > 1
       },
       filters: {
-        availableGenres: Video.GENRES,
+        availableGenres: Video.GENRES || ['Rock', 'Pop', 'Jazz', 'Blues', 'Country', 'Hip-Hop', 'Electronic', 'Classical'],
         availableDecades: ['60s', '70s', '80s', '90s', '2000s', '2010s', '2020s'],
         availableTypes: ['music', 'podcast', 'short']
       }
     });
   } catch (err) {
-    console.error('Error getting public videos:', err);
-    next(err);
+    console.error('❌ Error getting public videos:', err);
+    console.error('📋 Stack trace:', err.stack);
+    
+    // Réponse d'erreur sécurisée
+    res.status(500).json({
+      success: false,
+      message: 'Une erreur est survenue lors de la récupération des vidéos',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 };
 
@@ -142,6 +179,15 @@ exports.getPublicVideos = async (req, res, next) => {
 exports.getVideoById = async (req, res, next) => {
   try {
     const videoId = req.params.id;
+    console.log('🎬 Récupération de la vidéo:', videoId);
+    
+    // Valider l'ID MongoDB
+    if (!mongoose.Types.ObjectId.isValid(videoId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de vidéo invalide'
+      });
+    }
     
     // Get the video
     const video = await Video.findById(videoId)
@@ -154,21 +200,27 @@ exports.getVideoById = async (req, res, next) => {
       });
     }
     
+    console.log('✅ Vidéo trouvée:', video.titre);
+    
     // Increment view count (only once per user per day)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
     let shouldIncrementView = true;
-    if (req.user) {
-      // Check if user already viewed today
-      const existingView = await LogAction.findOne({
-        type_action: 'VIDEO_VIEW',
-        id_user: req.user._id,
-        'donnees_supplementaires.video_id': videoId,
-        creation_date: { $gte: today }
-      });
-      
-      shouldIncrementView = !existingView;
+    if (req.user && req.user._id) {
+      try {
+        // Check if user already viewed today
+        const existingView = await LogAction.findOne({
+          type_action: 'VIDEO_VIEW',
+          id_user: req.user._id,
+          'donnees_supplementaires.video_id': videoId,
+          creation_date: { $gte: today }
+        });
+        
+        shouldIncrementView = !existingView;
+      } catch (viewError) {
+        console.warn('⚠️ Erreur lors de la vérification des vues:', viewError.message);
+      }
     }
     
     if (shouldIncrementView) {
@@ -176,19 +228,23 @@ exports.getVideoById = async (req, res, next) => {
       await video.save();
       
       // Log the view
-      if (req.user) {
-        await LogAction.create({
-          type_action: 'VIDEO_VIEW',
-          description_action: `Viewed video: ${video.titre}`,
-          id_user: req.user._id,
-          ip_address: req.ip,
-          user_agent: req.headers['user-agent'],
-          created_by: req.user._id,
-          donnees_supplementaires: {
-            video_id: videoId,
-            video_titre: video.titre
-          }
-        });
+      if (req.user && req.user._id) {
+        try {
+          await LogAction.create({
+            type_action: 'VIDEO_VIEW',
+            description_action: `Viewed video: ${video.titre}`,
+            id_user: req.user._id,
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent'],
+            created_by: req.user._id,
+            donnees_supplementaires: {
+              video_id: videoId,
+              video_titre: video.titre
+            }
+          });
+        } catch (logError) {
+          console.warn('⚠️ Erreur lors du logging de vue:', logError.message);
+        }
       }
     }
     
@@ -211,19 +267,25 @@ exports.getVideoById = async (req, res, next) => {
       .select('titre artiste type genre youtubeUrl vues likes annee decennie')
       .sort({ vues: -1, likes: -1 });
     
-    // Check user interactions
-    let userInteraction = {};
-    if (req.user) {
-      const userLike = await Like.findOne({
-        type_entite: 'VIDEO',
-        entite_id: videoId,
-        utilisateur: req.user._id
-      });
-      
-      userInteraction = {
-        liked: userLike?.type_action === 'LIKE',
-        disliked: userLike?.type_action === 'DISLIKE'
-      };
+    // ⚠️ CORRECTION: Vérifier les interactions utilisateur avec sécurité
+    let userInteraction = { liked: false, disliked: false };
+    if (req.user && req.user._id) {
+      try {
+        // ⚠️ CORRECTION: Utiliser video_id et utilisateur
+        const userLike = await Like.findOne({
+          video_id: videoId,        // Utiliser video_id
+          utilisateur: req.user._id // Utiliser utilisateur
+        });
+        
+        if (userLike) {
+          userInteraction = {
+            liked: userLike.type_like === 'LIKE',
+            disliked: userLike.type_like === 'DISLIKE'
+          };
+        }
+      } catch (likeError) {
+        console.warn('⚠️ Erreur lors de la récupération de l\'interaction utilisateur:', likeError.message);
+      }
     }
     
     const videoObj = video.toObject();
@@ -235,108 +297,79 @@ exports.getVideoById = async (req, res, next) => {
       related: relatedVideos
     });
   } catch (err) {
-    console.error('Error getting video:', err);
-    next(err);
+    console.error('❌ Error getting video:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Une erreur est survenue lors de la récupération de la vidéo',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 };
 
 /**
- * @desc    Like or unlike a video
- * @route   POST /api/public/videos/:id/like
+ * @desc    Liker/Unliker une vidéo
+ * @route   POST /api/videos/:id/like
  * @access  Private
  */
 exports.likeVideo = async (req, res, next) => {
   try {
     const videoId = req.params.id;
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.id;
     
-    // Check if video exists
+    console.log('❤️ Tentative de like:');
+    console.log('📹 Video ID:', videoId);
+    console.log('👤 User ID:', userId);
+    
+    // Vérifier que la vidéo existe
     const video = await Video.findById(videoId);
     if (!video) {
       return res.status(404).json({
         success: false,
-        message: 'Video not found'
+        message: 'Vidéo non trouvée'
       });
     }
     
-    // Check existing like/dislike
-    const existingLike = await Like.findOne({
-      type_entite: 'VIDEO',
-      entite_id: videoId,
-      utilisateur: userId
+    // Vérifier si un like existe déjà pour cet utilisateur et cette vidéo
+    let existingLike = await Like.findOne({
+      video_id: videoId,
+      utilisateur: userId  
     });
     
+    console.log('🔍 Like existant trouvé:', existingLike ? 'Oui' : 'Non');
+    
+    let liked = false;
+    let likesCount = video.likes || 0;
+    
     if (existingLike) {
-      if (existingLike.type_action === 'LIKE') {
-        // User is un-liking
-        await existingLike.deleteOne();
-        video.likes = Math.max((video.likes || 0) - 1, 0);
-        
-        // Remove from favorisBy
-        video.meta.favorisBy = video.meta.favorisBy.filter(
-          id => !id.equals(userId)
-        );
-        
-        await video.save();
-        
-        return res.json({
-          success: true,
-          message: 'Video unliked',
-          data: {
-            liked: false,
-            disliked: false,
-            likes: video.likes,
-            dislikes: video.dislikes
-          }
-        });
-      } else {
-        // User is changing from dislike to like
-        existingLike.type_action = 'LIKE';
-        await existingLike.save();
-        
-        video.likes = (video.likes || 0) + 1;
-        video.dislikes = Math.max((video.dislikes || 0) - 1, 0);
-        
-        // Add to favorisBy
-        if (!video.meta.favorisBy.includes(userId)) {
-          video.meta.favorisBy.push(userId);
-        }
-        
-        await video.save();
-        
-        return res.json({
-          success: true,
-          message: 'Video liked',
-          data: {
-            liked: true,
-            disliked: false,
-            likes: video.likes,
-            dislikes: video.dislikes
-          }
-        });
-      }
+      // L'utilisateur a déjà liké, on retire le like
+      await Like.deleteOne({ _id: existingLike._id });
+      likesCount = Math.max(0, likesCount - 1);
+      liked = false;
+      console.log('👎 Like retiré');
     } else {
-      // New like
-      await Like.create({
-        type_entite: 'VIDEO',
-        entite_id: videoId,
-        utilisateur: userId,
-        type_action: 'LIKE'
+      // Créer un nouveau like avec la structure correcte
+      const newLike = new Like({
+        video_id: videoId,
+        utilisateur: userId,  
+        type_like: 'LIKE',
+        created_by: userId
       });
       
-      video.likes = (video.likes || 0) + 1;
-      
-      // Add to favorisBy
-      if (!video.meta.favorisBy.includes(userId)) {
-        video.meta.favorisBy.push(userId);
-      }
-      
-      await video.save();
-      
-      // Log action
+      await newLike.save();
+      likesCount = likesCount + 1;
+      liked = true;
+      console.log('👍 Nouveau like créé');
+    }
+    
+    // Mettre à jour le compteur de likes dans la vidéo
+    video.likes = likesCount;
+    await video.save();
+    
+    // Logger l'action
+    try {
       await LogAction.create({
-        type_action: 'VIDEO_LIKED',
-        description_action: `Liked video: ${video.titre}`,
+        type_action: liked ? "VIDEO_LIKEE" : "VIDEO_UNLIKEE",
+        description_action: `${liked ? 'Like ajouté' : 'Like retiré'} sur la vidéo "${video.titre}"`,
         id_user: userId,
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
@@ -346,119 +379,114 @@ exports.likeVideo = async (req, res, next) => {
           video_titre: video.titre
         }
       });
-      
-      res.json({
-        success: true,
-        message: 'Video liked',
-        data: {
-          liked: true,
-          disliked: false,
-          likes: video.likes,
-          dislikes: video.dislikes
-        }
+    } catch (logError) {
+      console.warn('⚠️ Erreur lors du logging (non critique):', logError.message);
+    }
+    
+    res.json({
+      success: true,
+      message: liked ? 'Vidéo likée avec succès' : 'Like retiré avec succès',
+      data: {
+        liked: liked,
+        disliked: false, 
+        likes: likesCount,
+        dislikes: video.dislikes || 0
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur lors du like:', error);
+    
+    // Si c'est une erreur de validation, donner plus de détails
+    if (error.name === 'ValidationError') {
+      console.error('📋 Détails de validation:', error.errors);
+      return res.status(400).json({
+        success: false,
+        message: 'Erreur de validation lors du like',
+        details: Object.values(error.errors).map(err => err.message)
       });
     }
-  } catch (err) {
-    console.error('Error liking video:', err);
-    next(err);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Erreur interne lors du like'
+    });
   }
 };
 
 /**
- * @desc    Dislike or un-dislike a video
- * @route   POST /api/public/videos/:id/dislike
+ * @desc    Disliker/Undisliker une vidéo  
+ * @route   POST /api/videos/:id/dislike
  * @access  Private
  */
 exports.dislikeVideo = async (req, res, next) => {
   try {
     const videoId = req.params.id;
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.id;
     
-    // Check if video exists
+    console.log('👎 Tentative de dislike:');
+    console.log('📹 Video ID:', videoId);
+    console.log('👤 User ID:', userId);
+    
+    // Vérifier que la vidéo existe
     const video = await Video.findById(videoId);
     if (!video) {
       return res.status(404).json({
         success: false,
-        message: 'Video not found'
+        message: 'Vidéo non trouvée'
       });
     }
     
-    // Check existing like/dislike
-    const existingLike = await Like.findOne({
-      type_entite: 'VIDEO',
-      entite_id: videoId,
-      utilisateur: userId
+    // Vérifier si un dislike existe déjà
+    let existingDislike = await Like.findOne({
+      video_id: videoId,
+      utilisateur: userId,  
+      type_like: 'DISLIKE'
     });
     
-    if (existingLike) {
-      if (existingLike.type_action === 'DISLIKE') {
-        // User is un-disliking
-        await existingLike.deleteOne();
-        video.dislikes = Math.max((video.dislikes || 0) - 1, 0);
-        await video.save();
-        
-        return res.json({
-          success: true,
-          message: 'Video un-disliked',
-          data: {
-            liked: false,
-            disliked: false,
-            likes: video.likes,
-            dislikes: video.dislikes
-          }
-        });
-      } else {
-        // User is changing from like to dislike
-        existingLike.type_action = 'DISLIKE';
-        await existingLike.save();
-        
-        video.likes = Math.max((video.likes || 0) - 1, 0);
-        video.dislikes = (video.dislikes || 0) + 1;
-        
-        // Remove from favorisBy
-        video.meta.favorisBy = video.meta.favorisBy.filter(
-          id => !id.equals(userId)
-        );
-        
-        await video.save();
-        
-        return res.json({
-          success: true,
-          message: 'Video disliked',
-          data: {
-            liked: false,
-            disliked: true,
-            likes: video.likes,
-            dislikes: video.dislikes
-          }
-        });
-      }
+    let disliked = false;
+    let dislikesCount = video.dislikes || 0;
+    
+    if (existingDislike) {
+      // Retirer le dislike
+      await Like.deleteOne({ _id: existingDislike._id });
+      dislikesCount = Math.max(0, dislikesCount - 1);
+      disliked = false;
     } else {
-      // New dislike
-      await Like.create({
-        type_entite: 'VIDEO',
-        entite_id: videoId,
-        utilisateur: userId,
-        type_action: 'DISLIKE'
+      // Ajouter un dislike
+      const newDislike = new Like({
+        video_id: videoId,
+        utilisateur: userId,  
+        type_like: 'DISLIKE',
+        created_by: userId
       });
       
-      video.dislikes = (video.dislikes || 0) + 1;
-      await video.save();
-      
-      res.json({
-        success: true,
-        message: 'Video disliked',
-        data: {
-          liked: false,
-          disliked: true,
-          likes: video.likes,
-          dislikes: video.dislikes
-        }
-      });
+      await newDislike.save();
+      dislikesCount = dislikesCount + 1;
+      disliked = true;
     }
-  } catch (err) {
-    console.error('Error disliking video:', err);
-    next(err);
+    
+    // Mettre à jour la vidéo
+    video.dislikes = dislikesCount;
+    await video.save();
+    
+    res.json({
+      success: true,
+      message: disliked ? 'Vidéo dislikée avec succès' : 'Dislike retiré avec succès',
+      data: {
+        liked: false,
+        disliked: disliked,
+        likes: video.likes || 0,
+        dislikes: dislikesCount
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur lors du dislike:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur interne lors du dislike'
+    });
   }
 };
 
@@ -557,12 +585,14 @@ exports.getVideosByGenre = async (req, res, next) => {
     const { genre } = req.params;
     const { page = 1, limit = 12, sortBy = 'popular' } = req.query;
     
+    const availableGenres = Video.GENRES || ['Rock', 'Pop', 'Jazz', 'Blues', 'Country', 'Hip-Hop', 'Electronic', 'Classical'];
+    
     // Validate genre
-    if (!Video.GENRES.includes(genre)) {
+    if (!availableGenres.includes(genre)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid genre',
-        availableGenres: Video.GENRES
+        availableGenres
       });
     }
     
@@ -715,18 +745,7 @@ exports.searchVideos = async (req, res, next) => {
     
     const videos = await Video.find(filter)
       .populate('auteur', 'nom prenom')
-      .sort({ 
-        // Boost exact title matches
-        $expr: {
-          $cond: [
-            { $regexMatch: { input: "$titre", regex: new RegExp(`^${query}`, 'i') } },
-            0,
-            1
-          ]
-        },
-        vues: -1,
-        likes: -1
-      })
+      .sort({ vues: -1, likes: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .select('-meta.favorisBy -meta.playlists');

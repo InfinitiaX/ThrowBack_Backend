@@ -76,6 +76,188 @@ exports.getVideoStats = async (req, res, next) => {
   }
 };
 
+
+// controllers/videoController.js - FONCTION CREATE SHORT CORRIGÉE
+
+/**
+ * @desc    Créer un short avec upload de fichier
+ * @route   POST /api/videos/shorts
+ * @access  Private
+ */
+exports.createShort = async (req, res, next) => {
+  try {
+    console.log('🎬 === DÉBUT CRÉATION SHORT ===');
+    console.log('👤 Utilisateur:', req.user ? `${req.user.prenom} ${req.user.nom}` : 'Non défini');
+    console.log('📁 Fichier uploadé:', req.file ? 'Oui' : 'Non');
+    console.log('📋 Body reçu:', req.body);
+    
+    const { titre, artiste, description = '' } = req.body;
+    
+    // ⚠️ CORRECTION: Extraction correcte de l'ID utilisateur
+    const userId = req.user._id || req.user.id;
+    
+    if (!userId) {
+      console.error('❌ Utilisateur non authentifié');
+      return res.status(401).json({
+        success: false,
+        message: 'Utilisateur non authentifié'
+      });
+    }
+    
+    console.log('👤 User ID extrait:', userId);
+    
+    // Validation des champs requis
+    if (!titre || titre.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le titre est requis'
+      });
+    }
+    
+    if (!artiste || artiste.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'L\'artiste est requis'
+      });
+    }
+    
+    // Vérifier si un fichier a été uploadé
+    if (!req.file) {
+      console.error('❌ Aucun fichier vidéo uploadé');
+      return res.status(400).json({
+        success: false,
+        message: 'Le fichier vidéo est requis pour créer un short'
+      });
+    }
+    
+    console.log('📁 Fichier validé:', {
+      originalname: req.file.originalname,
+      filename: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+    
+    // Récupérer et valider la durée
+    let duree = parseInt(req.body.duree) || 15;
+    
+    // Validation de la durée pour les shorts
+    if (duree < 10 || duree > 30) {
+      console.warn(' Durée invalide, utilisation de 15s par défaut');
+      duree = 15;
+    }
+    
+    console.log(' Durée validée:', duree);
+    
+    // Créer l'objet vidéo
+    const videoData = {
+      titre: titre.trim(),
+      youtubeUrl: `/uploads/shorts/${req.file.filename}`, 
+      type: 'short',
+      duree: duree,
+      artiste: artiste.trim(),
+      description: description.trim(),
+      auteur: userId,
+      annee: new Date().getFullYear(),
+      vues: 0,
+      likes: 0,
+      dislikes: 0,
+      meta: {
+        favorisBy: [],
+        playlists: [],
+        commentCount: 0,
+        tags: []
+      }
+    };
+    
+    console.log(' Données vidéo à sauvegarder:', videoData);
+    
+    // Créer la vidéo en base
+    const video = new Video(videoData);
+    
+    //  IMPORTANT: Ignorer la validation de durée pour les shorts uploadés
+    video._skipDureeValidation = true;
+    
+    // Sauvegarder
+    const savedVideo = await video.save();
+    
+    console.log(' Short sauvegardé avec ID:', savedVideo._id);
+    
+    // Journaliser l'action (optionnel - ne pas faire échouer si ça plante)
+    try {
+      await LogAction.create({
+        type_action: 'CREATE_SHORT',
+        description_action: `Short créé: "${titre}" par ${artiste}`,
+        id_user: userId,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        created_by: userId,
+        donnees_supplementaires: {
+          video_id: savedVideo._id,
+          filename: req.file.filename,
+          filesize: req.file.size
+        }
+      });
+    } catch (logError) {
+      console.warn(' Erreur lors du logging (non critique):', logError.message);
+    }
+    
+    console.log(' SHORT CRÉÉ AVEC SUCCÈS ');
+    
+    // Réponse de succès
+    res.status(201).json({
+      success: true,
+      message: 'Short créé avec succès!',
+      data: {
+        id: savedVideo._id,
+        titre: savedVideo.titre,
+        artiste: savedVideo.artiste,
+        description: savedVideo.description,
+        duree: savedVideo.duree,
+        youtubeUrl: savedVideo.youtubeUrl,
+        type: savedVideo.type,
+        vues: savedVideo.vues,
+        likes: savedVideo.likes,
+        dislikes: savedVideo.dislikes,
+        createdAt: savedVideo.createdAt,
+        meta: savedVideo.meta
+      }
+    });
+    
+  } catch (err) {
+    console.error(' Erreur lors de la création du short:', err);
+    
+    // Gestion spécifique des erreurs de validation Mongoose
+    if (err.name === 'ValidationError') {
+      console.error(' Erreurs de validation:', err.errors);
+      return res.status(400).json({
+        success: false,
+        message: 'Erreur de validation',
+        details: Object.values(err.errors).map(error => ({
+          field: error.path,
+          message: error.message,
+          value: error.value
+        }))
+      });
+    }
+    
+    // Erreur de duplication de clé
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Un short avec ces informations existe déjà'
+      });
+    }
+    
+    // Autres erreurs
+    res.status(500).json({
+      success: false,
+      message: 'Erreur interne lors de la création du short',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
+
+
 /**
  * @desc    Get all videos with filters and pagination (public)
  * @route   GET /api/videos

@@ -478,7 +478,8 @@ exports.likeComment = async (req, res, next) => {
       // New like
       await Like.create({
         type_entite: 'COMMENT',
-        entite_id: commentId,
+        type_entite_model: 'Comment', // Ajouter explicitement le type_entite_model
+        entite_id: videoId,
         utilisateur: userId,
         type_action: 'LIKE'
       });
@@ -570,9 +571,10 @@ exports.dislikeComment = async (req, res, next) => {
       // New dislike
       await Like.create({
         type_entite: 'COMMENT',
-        entite_id: commentId,
+        type_entite_model: 'Comment', // Ajouter explicitement le type_entite_model
+        entite_id: videoId,
         utilisateur: userId,
-        type_action: 'DISLIKE'
+        type_action: 'LIKE'
       });
       
       comment.dislikes = (comment.dislikes || 0) + 1;

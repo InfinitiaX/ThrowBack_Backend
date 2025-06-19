@@ -1,6 +1,10 @@
 
 
 // models/Playlist.js
+// Correction pour models/Like.js
+const mongoose = require('mongoose');
+const { Schema, model } = mongoose;
+
 const playlistSchema = new Schema({
   nom: {
     type: String,
