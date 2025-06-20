@@ -28,14 +28,21 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 
 // ===== Configuration CORS =====
+// Extrait de la configuration CORS dans index.js
 const corsOptions = {
   origin: [
-    'https://throwback-frontend.onrender.com',
+    process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com',  // Sans espace
     'http://localhost:3000'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Accept',
+    'Origin'
+  ]
 };
 
 app.use(cors(corsOptions));
