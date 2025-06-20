@@ -30,9 +30,9 @@ app.use(cookieParser());
 // ===== Configuration CORS =====
 const corsOptions = {
   origin: [
-    process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com',
-    'https://throwback-frontend.onrender.com',
-    'https://throwback-frontend.onrender.com'
+    process.env.FRONTEND_URL || 'http://localhost:3000 ',
+    'http://localhost:3000 ',
+    'http://localhost:3000 '
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -456,11 +456,11 @@ app.get("/", (req, res) => {
 });
 
 app.get("/login", (req, res) => {
-  res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login`);
+  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000 '}/login`);
 });
 
 app.get("/register", (req, res) => {
-  res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/register`);
+  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000 '}/register`);
 });
 
 // ===== GESTION DES ERREURS 404 =====
@@ -541,7 +541,7 @@ const server = app.listen(PORT, () => {
   console.log(` ========================================`);
   console.log(` URL: http://localhost:${PORT}`);
   console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(` Frontend: ${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}`);
+  console.log(` Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3000 '}`);
   console.log(`\n ROUTES PRINCIPALES:`);
   console.log(`    POST /api/videos/shorts (Upload de shorts)`);
   console.log(`     POST /api/public/videos/:id/like (Liker une vidéo)`);
