@@ -30,19 +30,12 @@ app.use(cookieParser());
 // ===== Configuration CORS =====
 const corsOptions = {
   origin: [
-    process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com ',
-    'https://throwback-frontend.onrender.com ',
-    'https://throwback-frontend.onrender.com '
+    'https://throwback-frontend.onrender.com',
+    'http://localhost:3000'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'X-Requested-With',
-    'Accept',
-    'Origin'
-  ]
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 };
 
 app.use(cors(corsOptions));
