@@ -49,15 +49,23 @@ const userSchema = new Schema(
   }
 );
 
-// Méthode pour générer un token de vérification
+/**
+ * Génère un token pour la vérification d'email
+ * Le token est valide pour 7 jours (604800000 ms)
+ * @returns {string} Le token généré
+ */
 userSchema.methods.generateVerificationToken = function() {
   const token = crypto.randomBytes(32).toString('hex');
   this.token_verification = token;
-  this.token_verification_expiration = Date.now() + 604800000; 
+  this.token_verification_expiration = Date.now() + 604800000; // 7 jours
   return token;
 };
 
-// Méthode pour générer un token de réinitialisation de mot de passe
+/**
+ * Génère un token pour la réinitialisation du mot de passe
+ * Le token est valide pour 7 jours (604800000 ms)
+ * @returns {string} Le token non-hashé
+ */
 userSchema.methods.generatePasswordResetToken = function() {
   const resetToken = crypto.randomBytes(20).toString('hex');
   
@@ -67,14 +75,17 @@ userSchema.methods.generatePasswordResetToken = function() {
     .update(resetToken)
     .digest('hex');
     
-  // Définir l'expiration (1 heure)
-  this.password_reset_expires = Date.now() + 604800000;
+  // Définir l'expiration (7 jours, comme pour la vérification d'email)
+  this.password_reset_expires = Date.now() + 604800000; // 7 jours
   
   // Retourner le token non hashé
   return resetToken;
 };
 
-// Méthode pour générer un JWT - Mise à jour pour utiliser role au lieu de roles
+/**
+ * Génère un JWT pour l'authentification
+ * @returns {string} Le token JWT signé
+ */
 userSchema.methods.generateAuthToken = function() {
   return jwt.sign(
     { 
@@ -89,7 +100,11 @@ userSchema.methods.generateAuthToken = function() {
   );
 };
 
-// Méthode pour comparer les mots de passe
+/**
+ * Compare un mot de passe candidat avec le mot de passe hashé de l'utilisateur
+ * @param {string} candidatePassword - Le mot de passe à vérifier
+ * @returns {boolean} True si le mot de passe correspond, false sinon
+ */
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.mot_de_passe);
 };
@@ -107,9 +122,12 @@ userSchema.pre('save', async function(next) {
   }
 });
 
-// Ajouter des index
+// Ajouter des index pour optimiser les requêtes fréquentes
 userSchema.index({ email: 1 });
 userSchema.index({ statut_compte: 1 });
 userSchema.index({ derniere_connexion: -1 });
+userSchema.index({ token_verification: 1 }, { sparse: true });
+userSchema.index({ password_reset_token: 1 }, { sparse: true });
+userSchema.index({ statut_verification: 1 });
 
 module.exports = model('User', userSchema);
