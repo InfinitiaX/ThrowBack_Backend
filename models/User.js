@@ -13,6 +13,7 @@ const userSchema = new Schema(
     profession: String,
     telephone: String,
     photo_profil: String,
+    photo_couverture: String, // Ajout pour la photo de couverture
     bio: String,
     date_naissance: Date,
     genre: { type: String, enum: ["Homme", "Femme", "Autre"], default: "Homme" },
@@ -49,18 +50,23 @@ const userSchema = new Schema(
   }
 );
 
-// Méthode pour générer un token de vérification
+// Méthode pour générer un token de vérification - 7 jours d'expiration
 userSchema.methods.generateVerificationToken = function() {
+  console.log(`🔑 Generating verification token for user: ${this.email}`);
   const token = crypto.randomBytes(32).toString('hex');
   this.token_verification = token;
-  this.token_verification_expiration = Date.now() + 604800000;
+  
+  // Expiration réglée à 7 jours (604800000 ms)
+  const expirationDate = new Date(Date.now() + 604800000);
+  this.token_verification_expiration = expirationDate;
+  
+  console.log(`✅ Token generated, expires on: ${expirationDate.toISOString()}`);
   return token;
 };
 
-
-
-// Méthode pour générer un token de réinitialisation de mot de passe
+// Méthode pour générer un token de réinitialisation de mot de passe - 7 jours d'expiration
 userSchema.methods.generatePasswordResetToken = function() {
+  console.log(`🔑 Generating password reset token for user: ${this.email}`);
   const resetToken = crypto.randomBytes(20).toString('hex');
   
   // Hash token et le sauvegarder dans la base de données
@@ -69,15 +75,21 @@ userSchema.methods.generatePasswordResetToken = function() {
     .update(resetToken)
     .digest('hex');
     
-  // Définir l'expiration (1 heure)
-  this.password_reset_expires = Date.now() + 604800000;
+  // Expiration réglée à 7 jours (604800000 ms) au lieu de 1 heure
+  const expirationDate = new Date(Date.now() + 604800000);
+  this.password_reset_expires = expirationDate;
   
+  console.log(`✅ Reset token generated, expires on: ${expirationDate.toISOString()}`);
   // Retourner le token non hashé
   return resetToken;
 };
 
-// Méthode pour générer un JWT 
+// Méthode pour générer un JWT
 userSchema.methods.generateAuthToken = function() {
+  console.log(`🔑 Generating JWT for user: ${this.email}, role: ${this.role}`);
+  const expiresIn = process.env.JWT_EXPIRES_IN || '24h'; // Augmentation à 24h par défaut
+  
+  // Inclure le rôle dans le payload
   return jwt.sign(
     { 
       id: this._id, 
@@ -87,13 +99,20 @@ userSchema.methods.generateAuthToken = function() {
       nom: this.nom
     },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
+    { expiresIn }
   );
 };
 
 // Méthode pour comparer les mots de passe
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.mot_de_passe);
+  try {
+    const isMatch = await bcrypt.compare(candidatePassword, this.mot_de_passe);
+    return isMatch;
+  } catch (error) {
+    console.error(`❌ Password comparison error for user ${this.email}:`, error);
+    // En cas d'erreur, retourner false pour indiquer une non-correspondance
+    return false;
+  }
 };
 
 // Middleware pre-save pour hasher le mot de passe
@@ -103,10 +122,53 @@ userSchema.pre('save', async function(next) {
   try {
     const salt = await bcrypt.genSalt(10);
     this.mot_de_passe = await bcrypt.hash(this.mot_de_passe, salt);
+    console.log(`✅ Password hashed successfully for user: ${this.email}`);
     next();
   } catch (error) {
+    console.error(`❌ Password hashing error for user ${this.email}:`, error);
     next(error);
   }
+});
+
+// Middleware pre-save pour vérifier l'expiration du token
+userSchema.pre('save', function(next) {
+  // Si le token de vérification existe mais pas de date d'expiration
+  if (this.token_verification && !this.token_verification_expiration) {
+    console.log(`⚠️ Fixing missing token expiration for user: ${this.email}`);
+    this.token_verification_expiration = new Date(Date.now() + 604800000); // 7 jours
+  }
+  
+  // Si le token de réinitialisation existe mais pas de date d'expiration
+  if (this.password_reset_token && !this.password_reset_expires) {
+    console.log(`⚠️ Fixing missing reset token expiration for user: ${this.email}`);
+    this.password_reset_expires = new Date(Date.now() + 604800000); // 7 jours
+  }
+  
+  next();
+});
+
+// Méthode virtuelle pour obtenir l'URL absolue de la photo de profil
+userSchema.virtual('photo_profil_url').get(function() {
+  if (!this.photo_profil) return null;
+  
+  // Si l'URL est déjà absolue, la retourner telle quelle
+  if (this.photo_profil.startsWith('http')) return this.photo_profil;
+  
+  // Sinon, préfixer avec l'URL du backend
+  const backendUrl = process.env.BACKEND_URL || 'https://throwback-backend.onrender.com';
+  return `${backendUrl}${this.photo_profil}`;
+});
+
+// Méthode virtuelle pour obtenir l'URL absolue de la photo de couverture
+userSchema.virtual('photo_couverture_url').get(function() {
+  if (!this.photo_couverture) return null;
+  
+  // Si l'URL est déjà absolue, la retourner telle quelle
+  if (this.photo_couverture.startsWith('http')) return this.photo_couverture;
+  
+  // Sinon, préfixer avec l'URL du backend
+  const backendUrl = process.env.BACKEND_URL || 'https://throwback-backend.onrender.com';
+  return `${backendUrl}${this.photo_couverture}`;
 });
 
 // Ajouter des index

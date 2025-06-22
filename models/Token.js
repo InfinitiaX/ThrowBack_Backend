@@ -23,7 +23,8 @@ const tokenSchema = new Schema(
     createdAt: {
       type: Date,
       default: Date.now,
-      expires: 43200 // Le token expire après 12 heures (en secondes)
+      
+      expires: 604800 
     }
   },
   {
@@ -35,5 +36,6 @@ const tokenSchema = new Schema(
 // Index pour rechercher par token et par userId
 tokenSchema.index({ token: 1 });
 tokenSchema.index({ userId: 1 });
+tokenSchema.index({ createdAt: 1 }, { expireAfterSeconds: 604800 }); 
 
 module.exports = model('Token', tokenSchema);
