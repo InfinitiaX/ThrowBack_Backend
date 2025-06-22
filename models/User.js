@@ -53,9 +53,11 @@ const userSchema = new Schema(
 userSchema.methods.generateVerificationToken = function() {
   const token = crypto.randomBytes(32).toString('hex');
   this.token_verification = token;
-  this.token_verification_expiration = Date.now() + 24 * 60 * 60 * 1000; // 24 heures
+  this.token_verification_expiration = Date.now() + 604800000;
   return token;
 };
+
+
 
 // Méthode pour générer un token de réinitialisation de mot de passe
 userSchema.methods.generatePasswordResetToken = function() {
@@ -68,13 +70,13 @@ userSchema.methods.generatePasswordResetToken = function() {
     .digest('hex');
     
   // Définir l'expiration (1 heure)
-  this.password_reset_expires = Date.now() + 60 * 60 * 1000;
+  this.password_reset_expires = Date.now() + 604800000;
   
   // Retourner le token non hashé
   return resetToken;
 };
 
-// Méthode pour générer un JWT - Mise à jour pour utiliser role au lieu de roles
+// Méthode pour générer un JWT 
 userSchema.methods.generateAuthToken = function() {
   return jwt.sign(
     { 
