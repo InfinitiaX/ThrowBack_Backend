@@ -179,7 +179,7 @@ exports.getPublicVideos = async (req, res, next) => {
 exports.getVideoById = async (req, res, next) => {
   try {
     const videoId = req.params.id;
-    console.log('🎬 Récupération de la vidéo:', videoId);
+    console.log(' Récupération de la vidéo:', videoId);
     
     // Valider l'ID MongoDB
     if (!mongoose.Types.ObjectId.isValid(videoId)) {
@@ -316,9 +316,9 @@ exports.likeVideo = async (req, res, next) => {
     const videoId = req.params.id;
     const userId = req.user._id || req.user.id;
     
-    console.log('❤️ Tentative de like:');
-    console.log('📹 Video ID:', videoId);
-    console.log('👤 User ID:', userId);
+    console.log(' Tentative de like:');
+    console.log(' Video ID:', videoId);
+    console.log(' User ID:', userId);
     
     // Vérifier que la vidéo existe
     const video = await Video.findById(videoId);
@@ -424,9 +424,9 @@ exports.dislikeVideo = async (req, res, next) => {
     const videoId = req.params.id;
     const userId = req.user._id || req.user.id;
     
-    console.log('👎 Tentative de dislike:');
-    console.log('📹 Video ID:', videoId);
-    console.log('👤 User ID:', userId);
+    console.log(' Tentative de dislike:');
+    console.log(' Video ID:', videoId);
+    console.log(' User ID:', userId);
     
     // Vérifier que la vidéo existe
     const video = await Video.findById(videoId);

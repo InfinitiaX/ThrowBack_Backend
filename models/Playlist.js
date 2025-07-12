@@ -1,7 +1,6 @@
 
 
 // models/Playlist.js
-// Correction pour models/Like.js
 const mongoose = require('mongoose');
 const { Schema, model } = mongoose;
 
@@ -159,6 +158,95 @@ playlistSchema.methods.reorganiserVideos = function(nouveauOrdre) {
     }
   });
   this.videos.sort((a, b) => a.ordre - b.ordre);
+  return this.save();
+};
+
+
+// Middleware pour mettre à jour automatiquement le nombre de favoris quand la liste favori_par change
+playlistSchema.pre('save', function(next) {
+  if (this.isModified('favori_par')) {
+    this.nb_favoris = this.favori_par.length;
+  }
+  
+  // Générer automatiquement une image de couverture si non définie
+  if (!this.image_couverture && this.videos && this.videos.length > 0) {
+    // Vous pourriez implémenter ici une logique pour utiliser la première vidéo comme couverture
+    // Par exemple, extraire une miniature de la première vidéo
+    // Cela nécessitera peut-être une requête pour obtenir les détails de la vidéo
+  }
+  
+  next();
+});
+
+// Méthode pour vérifier si un utilisateur est collaborateur
+playlistSchema.methods.isCollaborator = function(userId) {
+  return this.collaborateurs.some(collab => 
+    collab.utilisateur.toString() === userId.toString()
+  );
+};
+
+// Méthode pour vérifier les permissions d'un collaborateur
+playlistSchema.methods.hasPermission = function(userId, permission) {
+  // Le propriétaire a toutes les permissions
+  if (this.proprietaire.toString() === userId.toString()) {
+    return true;
+  }
+  
+  const collaborateur = this.collaborateurs.find(
+    collab => collab.utilisateur.toString() === userId.toString()
+  );
+  
+  // Vérifier si le collaborateur a la permission spécifiée
+  return collaborateur && collaborateur.permissions === permission;
+};
+
+// Méthode pour ajouter un collaborateur
+playlistSchema.methods.ajouterCollaborateur = function(userId, permission = 'LECTURE') {
+  // Vérifier si l'utilisateur est déjà collaborateur
+  const existingIndex = this.collaborateurs.findIndex(
+    collab => collab.utilisateur.toString() === userId.toString()
+  );
+  
+  if (existingIndex >= 0) {
+    // Mettre à jour la permission si l'utilisateur est déjà collaborateur
+    this.collaborateurs[existingIndex].permissions = permission;
+  } else {
+    // Ajouter un nouveau collaborateur
+    this.collaborateurs.push({
+      utilisateur: userId,
+      permissions: permission,
+      date_ajout: new Date()
+    });
+  }
+  
+  return this.save();
+};
+
+// Méthode pour supprimer un collaborateur
+playlistSchema.methods.supprimerCollaborateur = function(userId) {
+  this.collaborateurs = this.collaborateurs.filter(
+    collab => !collab.utilisateur.toString() === userId.toString()
+  );
+  
+  return this.save();
+};
+
+// Méthode pour incrémenter le compteur de lectures
+playlistSchema.methods.incrementerLectures = function() {
+  this.nb_lectures += 1;
+  return this.save();
+};
+
+// Méthode pour basculer une playlist dans les favoris d'un utilisateur
+playlistSchema.methods.toggleFavori = function(userId) {
+  const isFavorite = this.favori_par.some(id => id.toString() === userId.toString());
+  
+  if (isFavorite) {
+    this.favori_par = this.favori_par.filter(id => id.toString() !== userId.toString());
+  } else {
+    this.favori_par.push(userId);
+  }
+  
   return this.save();
 };
 

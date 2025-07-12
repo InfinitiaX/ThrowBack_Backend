@@ -124,7 +124,7 @@ exports.getVideoMemories = async (req, res) => {
 };
 
 
-// controllers/memoryController.js - FONCTION ADD MEMORY CORRIGÉE
+// controllers/memoryController.js 
 
 /**
  * @desc    Ajouter un souvenir (commentaire) à une vidéo
@@ -136,14 +136,14 @@ exports.addMemory = async (req, res) => {
     const { id: videoId } = req.params;
     const { contenu } = req.body;
     
-    // ⚠️ CORRECTION CRITIQUE: Vérifier et extraire l'ID utilisateur correctement
+    
     const userId = req.user._id || req.user.id;
     
-    console.log('💭 Ajout de souvenir:');
-    console.log('📹 Video ID:', videoId);
-    console.log('👤 User ID:', userId);
-    console.log('👤 User Object:', req.user);
-    console.log('📝 Contenu:', contenu);
+    console.log(' Ajout de souvenir:');
+    console.log(' Video ID:', videoId);
+    console.log(' User ID:', userId);
+    console.log(' User Object:', req.user);
+    console.log(' Contenu:', contenu);
     
     // Validation du contenu
     if (!contenu || contenu.trim().length === 0) {
@@ -162,7 +162,7 @@ exports.addMemory = async (req, res) => {
     
     // Vérifier que l'utilisateur est authentifié
     if (!userId) {
-      console.error('❌ Utilisateur non identifié dans req.user');
+      console.error(' Utilisateur non identifié dans req.user');
       return res.status(401).json({
         success: false,
         message: "Utilisateur non authentifié"
@@ -178,13 +178,13 @@ exports.addMemory = async (req, res) => {
       });
     }
     
-    console.log('✅ Vidéo trouvée:', video.titre);
+    console.log(' Vidéo trouvée:', video.titre);
     
-    // ⚠️ CORRECTION: Créer le commentaire avec le bon nom de champ
+    
     const memory = new Comment({
       contenu: contenu.trim(),
       video_id: videoId,
-      auteur: userId,  // ⚠️ CORRECTION: s'assurer que c'est bien 'auteur'
+      auteur: userId,  
       statut: 'ACTIF',
       creation_date: Date.now(),
       created_by: userId,
@@ -204,7 +204,7 @@ exports.addMemory = async (req, res) => {
     
     // Sauvegarder le commentaire
     const savedMemory = await memory.save();
-    console.log('✅ Souvenir sauvegardé avec ID:', savedMemory._id);
+    console.log(' Souvenir sauvegardé avec ID:', savedMemory._id);
     
     // Incrémenter le compteur de commentaires dans les métadonnées de la vidéo
     if (!video.meta) {
@@ -213,7 +213,7 @@ exports.addMemory = async (req, res) => {
     video.meta.commentCount = (video.meta.commentCount || 0) + 1;
     await video.save();
     
-    console.log('✅ Compteur de commentaires mis à jour:', video.meta.commentCount);
+    console.log(' Compteur de commentaires mis à jour:', video.meta.commentCount);
     
     // Journal d'action (optionnel - ne pas faire échouer si ça plante)
     try {
@@ -231,14 +231,14 @@ exports.addMemory = async (req, res) => {
         }
       });
     } catch (logError) {
-      console.warn('⚠️ Erreur lors du logging (non critique):', logError.message);
+      console.warn(' Erreur lors du logging (non critique):', logError.message);
     }
     
     // Récupérer le commentaire avec les informations de l'auteur
     const populatedMemory = await Comment.findById(savedMemory._id)
       .populate('auteur', 'nom prenom photo_profil');
     
-    console.log('✅ Souvenir populé:', populatedMemory);
+    console.log(' Souvenir populé:', populatedMemory);
     
     res.status(201).json({
       success: true,
@@ -260,11 +260,11 @@ exports.addMemory = async (req, res) => {
       }
     });
   } catch (err) {
-    console.error("❌ Erreur lors de l'ajout du souvenir:", err);
+    console.error(" Erreur lors de l'ajout du souvenir:", err);
     
     // Si c'est une erreur de validation Mongoose, donner plus de détails
     if (err.name === 'ValidationError') {
-      console.error('📋 Détails de validation:', err.errors);
+      console.error(' Détails de validation:', err.errors);
       return res.status(400).json({
         success: false,
         message: "Erreur de validation",

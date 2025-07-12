@@ -4,6 +4,327 @@ const LogAction = require("../models/LogAction");
 const LoginAttempt = require("../models/LoginAttempt");
 const StatutUser = require("../models/StatutUser");
 
+
+// Version corrigée de dashboardStats
+exports.dashboardStats = async (req, res) => {
+  console.log("=== DÉBUT dashboardStats ===");
+  
+  try {
+    // Données par défaut (fallbacks)
+    const defaultStats = {
+      basicStats: {
+        userCount: 0,
+        videoCount: 0,
+        commentCount: 0,
+        playlistCount: 0,
+        podcastCount: 0,
+        liveStreamCount: 0,
+        memoryCount: 0
+      },
+      recentUsers: [],
+      recentActivities: [],
+      dailyStats: [],
+      contentDistribution: {
+        videos: 0,
+        shorts: 0,
+        music: 0,
+        podcasts: 0,
+        liveStreams: 0
+      },
+      topVideos: [],
+      decadeStats: [],
+      userStatusStats: [],
+      likesActivity: [],
+      actionTypesDistribution: []
+    };
+    
+    // Modèles sûrs (vérifions qu'ils existent)
+    let User, LogAction, Video, Comment, Like, Playlist, Podcast, LiveStream, Memory;
+    
+    // Importation sécurisée des modèles avec vérification
+    try {
+      User = require("../models/User");
+      console.log(" Modèle User importé avec succès");
+    } catch (err) {
+      console.error(" Erreur lors de l'importation du modèle User:", err.message);
+      return res.json({
+        success: false,
+        message: "Erreur: Modèle User introuvable",
+        error: err.message,
+        ...defaultStats
+      });
+    }
+    
+    try {
+      LogAction = require("../models/LogAction");
+      console.log(" Modèle LogAction importé avec succès");
+    } catch (err) {
+      console.error(" Erreur lors de l'importation du modèle LogAction:", err.message);
+    }
+    
+    // Récupération des statistiques de base
+    let userCount = 0;
+    try {
+      userCount = await User.countDocuments();
+      console.log(` Nombre d'utilisateurs: ${userCount}`);
+    } catch (err) {
+      console.error(" Erreur lors du comptage des utilisateurs:", err.message);
+    }
+    
+    // Récupération des utilisateurs récents
+    let recentUsers = [];
+    try {
+      recentUsers = await User.find()
+        .sort({ date_inscription: -1 })
+        .limit(5)
+        .select('nom prenom email statut_compte date_inscription');
+      console.log(` ${recentUsers.length} utilisateurs récents récupérés`);
+    } catch (err) {
+      console.error(" Erreur lors de la récupération des utilisateurs récents:", err.message);
+    }
+    
+    // Récupération des activités récentes
+    let recentActivities = [];
+    try {
+      if (LogAction) {
+        recentActivities = await LogAction.find()
+          .sort({ date_action: -1 })
+          .limit(5)
+          .populate('id_user', 'nom prenom');
+        console.log(` ${recentActivities.length} activités récentes récupérées`);
+      }
+    } catch (err) {
+      console.error(" Erreur lors de la récupération des activités récentes:", err.message);
+    }
+    
+    // Statistiques d'activité par jour (7 derniers jours)
+    let dailyStats = [];
+    try {
+      if (LogAction) {
+        const lastWeekDate = new Date();
+        lastWeekDate.setDate(lastWeekDate.getDate() - 7);
+        
+        dailyStats = await LogAction.aggregate([
+          { $match: { date_action: { $gte: lastWeekDate } } },
+          { 
+            $group: {
+              _id: { $dateToString: { format: "%Y-%m-%d", date: "$date_action" } },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { _id: 1 } }
+        ]);
+        console.log(` ${dailyStats.length} jours d'activités récupérés`);
+      }
+    } catch (err) {
+      console.error(" Erreur lors de la récupération des statistiques d'activité:", err.message);
+    }
+    
+    // Essayer d'importer les autres modèles de manière sécurisée
+    let videoCount = 0, commentCount = 0, playlistCount = 0, podcastCount = 0, 
+        liveStreamCount = 0, memoryCount = 0;
+    
+    // Vidéos
+    try {
+      Video = require('../models/Video');
+      console.log(" Modèle Video importé avec succès");
+      
+      videoCount = await Video.countDocuments();
+      console.log(` Nombre de vidéos: ${videoCount}`);
+    } catch (err) {
+      console.error(" Erreur lors de l'importation ou du comptage des vidéos:", err.message);
+    }
+    
+    // Commentaires
+    try {
+      Comment = require('../models/Comment');
+      console.log(" Modèle Comment importé avec succès");
+      
+      commentCount = await Comment.countDocuments();
+      console.log(` Nombre de commentaires: ${commentCount}`);
+    } catch (err) {
+      console.error(" Erreur lors de l'importation ou du comptage des commentaires:", err.message);
+    }
+    
+    // Playlists
+    try {
+      Playlist = require('../models/Playlist');
+      console.log(" Modèle Playlist importé avec succès");
+      
+      playlistCount = await Playlist.countDocuments();
+      console.log(` Nombre de playlists: ${playlistCount}`);
+    } catch (err) {
+      console.error(" Erreur lors de l'importation ou du comptage des playlists:", err.message);
+    }
+    
+    // Podcasts
+    try {
+      Podcast = require('../models/Podcast');
+      console.log(" Modèle Podcast importé avec succès");
+      
+      podcastCount = await Podcast.countDocuments();
+      console.log(` Nombre de podcasts: ${podcastCount}`);
+    } catch (err) {
+      console.error(" Erreur lors de l'importation ou du comptage des podcasts:", err.message);
+    }
+    
+    // LiveStreams
+    try {
+      LiveStream = require('../models/LiveStream');
+      console.log(" Modèle LiveStream importé avec succès");
+      
+      liveStreamCount = await LiveStream.countDocuments();
+      console.log(` Nombre de livestreams: ${liveStreamCount}`);
+    } catch (err) {
+      console.error(" Erreur lors de l'importation ou du comptage des livestreams:", err.message);
+    }
+    
+    // Mémoires
+    try {
+      Memory = require('../models/Memory');
+      console.log(" Modèle Memory importé avec succès");
+      
+      memoryCount = await Memory.countDocuments();
+      console.log(` Nombre de mémoires: ${memoryCount}`);
+    } catch (err) {
+      console.error(" Erreur lors de l'importation ou du comptage des mémoires:", err.message);
+    }
+    
+    // Répartition des types de contenu
+    let contentDistribution = {
+      videos: videoCount,
+      shorts: 0,
+      music: 0,
+      podcasts: podcastCount,
+      liveStreams: liveStreamCount
+    };
+    
+    try {
+      if (Video) {
+        contentDistribution.shorts = await Video.countDocuments({ type: 'short' });
+        contentDistribution.music = await Video.countDocuments({ type: 'music' });
+        console.log(` Répartition du contenu récupérée: ${JSON.stringify(contentDistribution)}`);
+      }
+    } catch (err) {
+      console.error(" Erreur lors de la récupération de la répartition du contenu:", err.message);
+    }
+    
+    // Top 5 des vidéos les plus vues
+    let topVideos = [];
+    try {
+      if (Video) {
+        topVideos = await Video.find()
+          .sort({ vues: -1 })
+          .limit(5)
+          .select('titre artiste vues likes type');
+        console.log(` ${topVideos.length} vidéos populaires récupérées`);
+      }
+    } catch (err) {
+      console.error(" Erreur lors de la récupération des vidéos populaires:", err.message);
+    }
+    
+    // Statistiques par décennie pour les vidéos musicales
+    let decadeStats = [];
+    try {
+      if (Video) {
+        decadeStats = await Video.aggregate([
+          { $match: { type: 'music', decennie: { $exists: true } } },
+          { $group: { _id: "$decennie", count: { $sum: 1 } } },
+          { $sort: { _id: 1 } }
+        ]);
+        console.log(` ${decadeStats.length} statistiques par décennie récupérées`);
+      }
+    } catch (err) {
+      console.error(" Erreur lors de la récupération des statistiques par décennie:", err.message);
+    }
+    
+    // Statistiques des utilisateurs par statut
+    let userStatusStats = [];
+    try {
+      userStatusStats = await User.aggregate([
+        { $group: { _id: "$statut_compte", count: { $sum: 1 } } },
+        { $sort: { _id: 1 } }
+      ]);
+      console.log(` ${userStatusStats.length} statistiques par statut utilisateur récupérées`);
+    } catch (err) {
+      console.error(" Erreur lors de la récupération des statistiques par statut utilisateur:", err.message);
+    }
+    
+    // Activité de likes par jour (7 derniers jours)
+    let likesActivity = [];
+    try {
+      if (Like) {
+        const lastWeekDate = new Date();
+        lastWeekDate.setDate(lastWeekDate.getDate() - 7);
+        
+        likesActivity = await Like.aggregate([
+          { $match: { creation_date: { $gte: lastWeekDate } } },
+          { 
+            $group: {
+              _id: { $dateToString: { format: "%Y-%m-%d", date: "$creation_date" } },
+              count: { $sum: 1 }
+            }
+          },
+          { $sort: { _id: 1 } }
+        ]);
+        console.log(` ${likesActivity.length} jours d'activité de likes récupérés`);
+      }
+    } catch (err) {
+      console.error(" Erreur lors de la récupération de l'activité de likes:", err.message);
+    }
+    
+    // Distribution des types d'actions dans les logs
+    let actionTypesDistribution = [];
+    try {
+      if (LogAction) {
+        actionTypesDistribution = await LogAction.aggregate([
+          { $group: { _id: "$type_action", count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $limit: 10 }
+        ]);
+        console.log(` ${actionTypesDistribution.length} types d'actions récupérés`);
+      }
+    } catch (err) {
+      console.error(" Erreur lors de la récupération de la distribution des types d'actions:", err.message);
+    }
+    
+    console.log(" Envoi de la réponse JSON...");
+    
+    res.json({
+      success: true,
+      basicStats: {
+        userCount,
+        videoCount,
+        commentCount,
+        playlistCount,
+        podcastCount,
+        liveStreamCount,
+        memoryCount
+      },
+      recentUsers,
+      recentActivities,
+      dailyStats,
+      contentDistribution,
+      topVideos,
+      decadeStats,
+      userStatusStats,
+      likesActivity,
+      actionTypesDistribution
+    });
+    
+    console.log("=== FIN dashboardStats: SUCCÈS ===");
+  } catch (error) {
+    console.error("=== FIN dashboardStats: ERREUR ===", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Une erreur est survenue lors du chargement des statistiques du dashboard.",
+      error: error.message
+    });
+  }
+};
+
+
+
 // API: Récupérer la liste des utilisateurs
 exports.getUsersAPI = async (req, res) => {
   try {

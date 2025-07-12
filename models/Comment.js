@@ -1,4 +1,4 @@
-// models/Comment.js - MODÈLE CORRIGÉ
+// models/Comment.js 
 const mongoose = require('mongoose');
 const { Schema, model } = mongoose;
 
@@ -114,7 +114,7 @@ commentSchema.statics.getCommentsCount = function(videoId) {
   return this.countDocuments({ 
     video_id: videoId, 
     statut: 'ACTIF',
-    parent_comment: null // Seulement les commentaires de premier niveau
+    parent_comment: null
   });
 };
 

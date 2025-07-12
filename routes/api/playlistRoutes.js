@@ -1,7 +1,7 @@
-// routes/api/playlists.js
+// routes/api/userplaylists.js
 const express = require('express');
 const router = express.Router();
-const playlistController = require('../../controllers/playlistController');
+const playlistController = require('../../controllers/userPlaylistController');
 const { protect } = require('../../middlewares/authMiddleware');
 
 // Routes publiques

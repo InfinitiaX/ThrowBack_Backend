@@ -16,7 +16,7 @@ const videoSchema = new Schema({
   youtubeUrl: { type: String, required: true },
   type: { 
     type: String, 
-    enum: ['short', 'music', 'podcast'], 
+    enum: ['short', 'music'], 
     required: true 
   },
   genre: { 
