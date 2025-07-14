@@ -96,8 +96,8 @@ app.use(cookieParser());
 // ===== Configuration CORS =====
 const corsOptions = {
   origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'http://localhost:3000'
+    process.env.FRONTEND_URL || 'https://testdevinfinitiax.fr',
+    'https://testdevinfinitiax.fr'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -1178,11 +1178,11 @@ app.get("/", (req, res) => {
 });
 
 app.get("/login", (req, res) => {
-  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`);
+  res.redirect(`${process.env.FRONTEND_URL || 'https://testdevinfinitiax.fr'}/login`);
 });
 
 app.get("/register", (req, res) => {
-  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/register`);
+  res.redirect(`${process.env.FRONTEND_URL || 'https://testdevinfinitiax.fr'}/register`);
 });
 
 // ===== GESTION DES ERREURS 404 AMÉLIORÉE =====
@@ -1316,7 +1316,7 @@ const server = app.listen(PORT, () => {
   console.log(` ========================================`);
   console.log(`  URL: http://localhost:${PORT}`);
   console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`  Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+  console.log(`  Frontend: ${process.env.FRONTEND_URL || 'https://testdevinfinitiax.fr'}`);
   console.log(`  Documentation: http://localhost:${PORT}/api-docs`);
   console.log(`\n  ROUTES PRINCIPALES:`);
   console.log(`    POST /api/videos/shorts (Upload de shorts)`);

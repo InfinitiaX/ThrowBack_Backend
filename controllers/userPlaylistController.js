@@ -719,7 +719,7 @@ exports.sharePlaylist = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Playlist partagée avec succès",
-      shareUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/playlists/${playlistId}`
+      shareUrl: `${process.env.FRONTEND_URL || 'https://testdevinfinitiax.fr'}/dashboard/playlists/${playlistId}`
     });
   } catch (err) {
     console.error("Erreur lors du partage de la playlist:", err);
