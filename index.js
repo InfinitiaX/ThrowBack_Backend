@@ -96,10 +96,10 @@ app.use(cookieParser());
 // ===== Configuration CORS =====
 const corsOptions = {
 	//		  origin: [
-	//		    process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com',
-	//		    'https://throwback-frontend.onrender.com'
+	//		    process.env.FRONTEND_URL || ' https://throwback-frontend.onrender.com  ',
+	//		    ' https://throwback-frontend.onrender.com  '
 	//		  ],
-	origin: ['http://testdevinfinitiax.fr','https://throwback-frontend.onrender.com'], 
+	origin: ['http://testdevinfinitiax.fr',' https://throwback-frontend.onrender.com  '], 
 	credentials: true,
 	methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
 	allowedHeaders: [
@@ -116,7 +116,7 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://throwback-frontend.onrender.com');
+  res.header('Access-Control-Allow-Origin', ' https://throwback-frontend.onrender.com  ');
   res.header('Access-Control-Allow-Credentials', 'true');
   next();
 });
@@ -1185,11 +1185,11 @@ app.get("/", (req, res) => {
 });
 
 app.get("/login", (req, res) => {
-	res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login`);
+	res.redirect(`${process.env.FRONTEND_URL || ' https://throwback-frontend.onrender.com  '}/login`);
 });
 
 app.get("/register", (req, res) => {
-	res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/register`);
+	res.redirect(`${process.env.FRONTEND_URL || ' https://throwback-frontend.onrender.com  '}/register`);
 });
 
 // ===== GESTION DES ERREURS 404 AMÉLIORÉE =====
@@ -1323,7 +1323,7 @@ const server = app.listen(PORT, () => {
 	console.log(` ========================================`);
 	console.log(`  URL: http://localhost:${PORT}`);
 	console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
-	console.log(`  Frontend: ${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}`);
+	console.log(`  Frontend: ${process.env.FRONTEND_URL || ' https://throwback-frontend.onrender.com  '}`);
 	console.log(`  Documentation: http://localhost:${PORT}/api-docs`);
 	console.log(`\n  ROUTES PRINCIPALES:`);
 	console.log(`    POST /api/videos/shorts (Upload de shorts)`);
