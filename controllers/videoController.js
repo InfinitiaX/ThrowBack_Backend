@@ -77,8 +77,6 @@ exports.getVideoStats = async (req, res, next) => {
 };
 
 
-// controllers/videoController.js - FONCTION CREATE SHORT CORRIGÉE
-
 /**
  * @desc    Créer un short avec upload de fichier
  * @route   POST /api/videos/shorts
@@ -86,25 +84,25 @@ exports.getVideoStats = async (req, res, next) => {
  */
 exports.createShort = async (req, res, next) => {
   try {
-    console.log('🎬 === DÉBUT CRÉATION SHORT ===');
-    console.log('👤 Utilisateur:', req.user ? `${req.user.prenom} ${req.user.nom}` : 'Non défini');
-    console.log('📁 Fichier uploadé:', req.file ? 'Oui' : 'Non');
-    console.log('📋 Body reçu:', req.body);
+    console.log('=== DÉBUT CRÉATION SHORT ===');
+    console.log(' Utilisateur:', req.user ? `${req.user.prenom} ${req.user.nom}` : 'Non défini');
+    console.log(' Fichier uploadé:', req.file ? 'Oui' : 'Non');
+    console.log(' Body reçu:', req.body);
     
     const { titre, artiste, description = '' } = req.body;
     
-    // ⚠️ CORRECTION: Extraction correcte de l'ID utilisateur
+    //  CORRECTION: Extraction correcte de l'ID utilisateur
     const userId = req.user._id || req.user.id;
     
     if (!userId) {
-      console.error('❌ Utilisateur non authentifié');
+      console.error(' Utilisateur non authentifié');
       return res.status(401).json({
         success: false,
         message: 'Utilisateur non authentifié'
       });
     }
     
-    console.log('👤 User ID extrait:', userId);
+    console.log(' User ID extrait:', userId);
     
     // Validation des champs requis
     if (!titre || titre.trim().length === 0) {

@@ -82,7 +82,7 @@ const register = async (req, res) => {
     console.log(" Token saved successfully:", tokenDoc._id);
 
     // Build verification link to redirect to API
-    const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/verify/${user._id}/${verificationToken}`;
+    const verificationLink = `${process.env.BACKEND_URL || 'https://api.testdevinfinitiax.fr'}/api/auth/verify/${user._id}/${verificationToken}`;
    
     try {
       // Send verification email
@@ -344,7 +344,7 @@ const forgotPassword = async (req, res) => {
     await user.save();
 
     // Create reset link pointing to API
-    const resetLink = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/verify-reset/${resetToken}`;
+    const resetLink = `${process.env.BACKEND_URL || 'https://api.testdevinfinitiax.fr'}/api/auth/verify-reset/${resetToken}`;
     
     try {
       // Send reset email
@@ -541,7 +541,7 @@ const resendVerification = async (req, res) => {
     }).save();
 
     // Build verification link pointing to API
-    const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/verify/${user._id}/${verificationToken}`;
+    const verificationLink = `${process.env.BACKEND_URL || 'https://api.testdevinfinitiax.fr'}/api/auth/verify/${user._id}/${verificationToken}`;
     
     try {
       // Send email

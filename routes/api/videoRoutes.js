@@ -1,4 +1,4 @@
-// routes/api/videoRoutes.js - VERSION CORRIGÉE
+// routes/api/videoRoutes.js
 const express = require('express');
 const router = express.Router();
 const videoController = require('../../controllers/videoController');
@@ -26,9 +26,9 @@ router.get('/search', publicVideoController?.searchVideos || ((req, res) => {
 // ===== ROUTES POUR LES SHORTS (UTILISATEURS) =====
 // IMPORTANT: Cette route doit être AVANT /:id pour éviter les conflits
 router.post('/shorts', protect, uploadShort.single('videoFile'), (req, res, next) => {
-  console.log('🎬 Route POST /shorts appelée');
-  console.log('📁 Fichier reçu:', req.file ? 'Oui' : 'Non');
-  console.log('📋 Body:', req.body);
+  console.log(' Route POST /shorts appelée');
+  console.log(' Fichier reçu:', req.file ? 'Oui' : 'Non');
+  console.log(' Body:', req.body);
   
   if (videoController.createShort) {
     videoController.createShort(req, res, next);
