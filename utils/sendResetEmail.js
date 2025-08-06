@@ -36,7 +36,7 @@ module.exports = async (email, url) => {
 									<!-- Header -->
 									<tr>
 										<td align="center" style="padding: 40px 40px 20px 40px;">
-											<img src="uploads/images/Logo.png" alt="ThrowBack Logo" style="max-width: 200px; height: auto;">
+											<p style={{color: '#b31217', fontSize: '1.5rem'}}>THROWBACK-CONNECT</p>
 										</td>
 									</tr>
 									

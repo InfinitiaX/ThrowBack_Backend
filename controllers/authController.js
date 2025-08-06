@@ -344,7 +344,7 @@ const forgotPassword = async (req, res) => {
     await user.save();
 
     // Create reset link pointing to API
-    const resetLink = `${process.env.BACKEND_URL || 'https://api.testdevinfinitiax.fr'}/api/auth/verify-reset/${resetToken}`;
+  const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
     
     try {
       // Send reset email
