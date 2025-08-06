@@ -36,7 +36,7 @@ module.exports = async (email, subject, url) => {
 									<!-- Header -->
 									<tr>
 										<td align="center" style="padding: 40px 40px 20px 40px;">
-											<p style={{color: '#b31217', fontSize: '1.5rem'}}>THROWBACK-CONNECT</p>
+											<p style="color: #b31217; fontSize: 1.5rem">THROWBACK-CONNECT</p>
 										</td>
 									</tr>
 									

@@ -1,18 +1,15 @@
-// utils/sendResetEmail.js
 const nodemailer = require("nodemailer");
 
 module.exports = async (email, url) => {
 	try {
-		// CORRECTION : Utiliser createTransport (pas createTransporter)
 		const transporter = nodemailer.createTransport({
 			service: 'gmail',
 			auth: {
-				user: process.env.EMAIL_USER,  // <— ici EMAIL_PASS
-        		pass: process.env.EMAIL_PASS,  // <— et ici EMAIL_PASS
+				user: process.env.EMAIL_USER,
+				pass: process.env.EMAIL_PASS,
 			},
 		});
 
-		// Optionnel : Vérifier la configuration
 		await transporter.verify();
 		console.log("SMTP configuration verified successfully");
 
@@ -36,7 +33,7 @@ module.exports = async (email, url) => {
 									<!-- Header -->
 									<tr>
 										<td align="center" style="padding: 40px 40px 20px 40px;">
-											<p style={{color: '#b31217', fontSize: '1.5rem'}}>THROWBACK-CONNECT</p>
+											<p style="color: #b31217; font-size: 1.5rem;">THROWBACK-CONNECT</p>
 										</td>
 									</tr>
 									
@@ -56,7 +53,7 @@ module.exports = async (email, url) => {
 											
 											<p style="color: #999999; font-size: 12px; text-align: center;">
 												Having trouble? Copy and paste this link into your browser:<br>
-												<a href="${url}" style="color: #e32929; text-decoration: none; word-break: break-all;">${url}</a>
+												<a href="${url}" style="color: #e32929; text-decoration: none; word-break: break-all; display: inline-block; margin-top: 10px; padding: 5px; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 3px;">${url}</a>
 											</p>
 											
 											<p style="color: #999999; font-size: 12px; text-align: center; margin-top: 20px;">
