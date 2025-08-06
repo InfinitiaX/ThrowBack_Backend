@@ -395,7 +395,7 @@ const verifyEmail = async (req, res) => {
     const user = await User.findById(id);
     if (!user) {
       console.log(" User not found");
-      return res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?error=invalid_link&message=Invalid verification link`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=invalid_link&message=Invalid verification link`);
     }
 
     // Log user object for debugging
@@ -408,7 +408,7 @@ const verifyEmail = async (req, res) => {
     // Check if user is already verified
     if (user.statut_verification) {
       console.log(" User already verified");
-      return res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?verified=true&message=Your account is already verified. You can now sign in.`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?verified=true&message=Your account is already verified. You can now sign in.`);
     }
 
     // Check if token exists
@@ -423,7 +423,7 @@ const verifyEmail = async (req, res) => {
 
     if (!tokenDoc) {
       console.log(" Token not found or expired");
-      return res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?error=expired_link&message=Verification link expired`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=expired_link&message=Verification link expired`);
     }
 
     // Activate account
@@ -446,12 +446,13 @@ const verifyEmail = async (req, res) => {
     console.log(" Email verified successfully");
     
     // Redirect to login page with success message (SANS ESPACE DANS L'URL)
-    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?verified=true&message=Email verified successfully. You can now sign in.`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?verified=true&message=Email verified successfully. You can now sign in.`);
   } catch (error) {
     console.error(" Email verification error:", error);
-    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?error=server_error&message=An error occurred during verification`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=server_error&message=An error occurred during verification`);
   }
 };
+
 
 /**
  * @desc    Reset token verification and redirection
@@ -460,11 +461,15 @@ const verifyEmail = async (req, res) => {
  */
 const verifyPasswordReset = async (req, res) => {
   try {
-    console.log(" Verify password reset token called");
+    console.log("🔍 Verify password reset token called");
     const { token } = req.params;
+    
+    // Log du token reçu
+    console.log("📝 Token received:", token);
     
     // Hash token to compare with stored one
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    console.log("🔒 Hashed token:", hashedToken);
     
     // Find user with this token
     const user = await User.findOne({
@@ -473,19 +478,33 @@ const verifyPasswordReset = async (req, res) => {
     });
     
     if (!user) {
-      console.log(" Invalid or expired token");
-      return res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=invalid_token&message=Invalid or expired token`);
+      console.log("❌ Invalid or expired token");
+      const errorUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=invalid_token&message=Invalid or expired token`;
+      console.log("🔄 Redirecting to:", errorUrl);
+      return res.redirect(errorUrl);
     }
     
-    console.log(" Valid token, redirecting to reset form");
+    console.log("✅ Valid token for user:", user.email);
     
-    // Valid token, redirect to reset form (SANS ESPACE DANS L'URL)
-    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/reset-password?token=${token}&message=Valid token, you can now set your new password`);
+    // Construire l'URL de redirection
+    const redirectUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/reset-password?token=${token}&message=Valid token, you can now set your new password`;
+    
+    // Log de l'URL de redirection complète
+    console.log("🔄 Redirecting to reset password page:");
+    console.log("📍 Full URL:", redirectUrl);
+    
+    // Valid token, redirect to reset form
+    res.redirect(redirectUrl);
   } catch (error) {
-    console.error(" Password reset token verification error:", error);
-    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=server_error&message=An error occurred`);
+    console.error("❌ Password reset token verification error:", error);
+    const errorUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=server_error&message=An error occurred`;
+    console.log("🔄 Error redirect to:", errorUrl);
+    res.redirect(errorUrl);
   }
 };
+
+
+
 
 
 /**
