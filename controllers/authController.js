@@ -3,7 +3,6 @@ const User = mongoose.model('User');
 const Token = require("../models/Token");
 const LoginAttempt = require("../models/LoginAttempt");
 const LogAction = require("../models/LogAction");
-// Suppression de l'import du modèle Role qui n'est plus nécessaire
 const sendEmail = require("../utils/sendEmail");
 const sendResetEmail = require("../utils/sendResetEmail");
 const captchaGenerator = require("../utils/captcha");
@@ -331,8 +330,7 @@ const forgotPassword = async (req, res) => {
     
     // For security reasons, don't reveal if email exists
     if (!user) {
-      // Même si l'utilisateur n'existe pas, on retourne un succès
-      // pour ne pas révéler l'existence ou non de l'email
+   
       return res.status(200).json({
         success: true,
         message: "If this email is associated with an account, a reset link has been sent"
@@ -344,7 +342,7 @@ const forgotPassword = async (req, res) => {
     await user.save();
 
     // Create reset link pointing to API
-  const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+   const resetLink = `${process.env.BACKEND_URL || 'https://api.testdevinfinitiax.fr'}/api/auth/verify-reset/${resetToken}`;
     
     try {
       // Send reset email
