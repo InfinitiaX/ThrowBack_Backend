@@ -293,7 +293,7 @@ const getMe = async (req, res) => {
  */
 const forgotPassword = async (req, res) => {
   try {
-    console.log("🔄 Forgot password with CAPTCHA called");
+    console.log(" Forgot password with CAPTCHA called");
     const { email, captchaId, captchaAnswer } = req.body;
 
     // Vérification de base
@@ -312,11 +312,11 @@ const forgotPassword = async (req, res) => {
     }
 
     // Vérifier le CAPTCHA
-    console.log("🤖 Vérification du CAPTCHA...");
+    console.log(" Vérification du CAPTCHA...");
     const captchaResult = captchaGenerator.verifyCaptcha(captchaId, captchaAnswer);
     
     if (!captchaResult.valid) {
-      console.log("❌ CAPTCHA invalide:", captchaResult.error);
+      console.log(" CAPTCHA invalide:", captchaResult.error);
       return res.status(400).json({
         success: false,
         message: "Invalid CAPTCHA. Please try again.",
@@ -324,7 +324,7 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    console.log("✅ CAPTCHA vérifié avec succès");
+    console.log(" CAPTCHA vérifié avec succès");
 
     // Check if user exists
     const user = await User.findOne({ email: email.toLowerCase() });
@@ -349,9 +349,9 @@ const forgotPassword = async (req, res) => {
     try {
       // Send reset email
       await sendResetEmail(user.email, resetLink);
-      console.log("📧 Reset email sent successfully");
+      console.log(" Reset email sent successfully");
     } catch (emailError) {
-      console.error("📧 Password reset email error:", emailError);
+      console.error(" Password reset email error:", emailError);
     }
 
     // Log action
@@ -372,7 +372,7 @@ const forgotPassword = async (req, res) => {
       message: "If this email is associated with an account, a reset link has been sent"
     });
   } catch (error) {
-    console.error("❌ Password reset request error:", error);
+    console.error(" Password reset request error:", error);
     res.status(500).json({
       success: false,
       message: "An error occurred during password reset request. Please try again."
@@ -395,7 +395,7 @@ const verifyEmail = async (req, res) => {
     const user = await User.findById(id);
     if (!user) {
       console.log(" User not found");
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=invalid_link&message=Invalid verification link`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?error=invalid_link&message=Invalid verification link`);
     }
 
     // Log user object for debugging
@@ -408,7 +408,7 @@ const verifyEmail = async (req, res) => {
     // Check if user is already verified
     if (user.statut_verification) {
       console.log(" User already verified");
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?verified=true&message=Your account is already verified. You can now sign in.`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?verified=true&message=Your account is already verified. You can now sign in.`);
     }
 
     // Check if token exists
@@ -423,7 +423,7 @@ const verifyEmail = async (req, res) => {
 
     if (!tokenDoc) {
       console.log(" Token not found or expired");
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=expired_link&message=Verification link expired`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?error=expired_link&message=Verification link expired`);
     }
 
     // Activate account
@@ -446,10 +446,10 @@ const verifyEmail = async (req, res) => {
     console.log(" Email verified successfully");
     
     // Redirect to login page with success message (SANS ESPACE DANS L'URL)
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?verified=true&message=Email verified successfully. You can now sign in.`);
+    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?verified=true&message=Email verified successfully. You can now sign in.`);
   } catch (error) {
     console.error(" Email verification error:", error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=server_error&message=An error occurred during verification`);
+    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/login?error=server_error&message=An error occurred during verification`);
   }
 };
 
@@ -474,16 +474,16 @@ const verifyPasswordReset = async (req, res) => {
     
     if (!user) {
       console.log(" Invalid or expired token");
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/forgot-password?error=invalid_token&message=Invalid or expired token`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=invalid_token&message=Invalid or expired token`);
     }
     
     console.log(" Valid token, redirecting to reset form");
     
     // Valid token, redirect to reset form (SANS ESPACE DANS L'URL)
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${token}&message=Valid token, you can now set your new password`);
+    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/reset-password?token=${token}&message=Valid token, you can now set your new password`);
   } catch (error) {
     console.error(" Password reset token verification error:", error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/forgot-password?error=server_error&message=An error occurred`);
+    res.redirect(`${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=server_error&message=An error occurred`);
   }
 };
 
