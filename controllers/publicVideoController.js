@@ -1,4 +1,4 @@
-// controllers/publicVideoController.js - VERSION CORRIGÉE
+// controllers/publicVideoController.js
 const Video = require('../models/Video');
 const Comment = require('../models/Comment');
 const Playlist = require('../models/Playlist');
@@ -23,7 +23,7 @@ exports.getPublicVideos = async (req, res, next) => {
       limit = 12 
     } = req.query;
     
-    console.log('🎬 Récupération des vidéos publiques avec filtres:', { type, genre, decade, search, sortBy });
+    console.log(' Récupération des vidéos publiques avec filtres:', { type, genre, decade, search, sortBy });
     
     // Build filter object
     const filter = {};
@@ -83,41 +83,41 @@ exports.getPublicVideos = async (req, res, next) => {
       .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit))
-      .select('-meta.favorisBy -meta.playlists'); // Exclude sensitive data
+      .select('-meta.favorisBy -meta.playlists'); 
     
-    console.log(`📹 ${videos.length} vidéos trouvées sur ${total} au total`);
+    console.log(` ${videos.length} vidéos trouvées sur ${total} au total`);
     
-    // ⚠️ CORRECTION: Si un utilisateur est connecté, vérifier ses likes
+    
     let userLikes = [];
     if (req.user && req.user._id) {
       try {
         const videoIds = videos.map(v => v._id);
-        console.log('👤 Utilisateur connecté, vérification des likes pour:', req.user._id);
+        console.log(' Utilisateur connecté, vérification des likes pour:', req.user._id);
         
-        // ⚠️ CORRECTION: Utiliser video_id au lieu de entite_id
+        
         userLikes = await Like.find({
-          video_id: { $in: videoIds },  // Utiliser video_id
-          utilisateur: req.user._id     // Utiliser utilisateur
+          video_id: { $in: videoIds },  
+          utilisateur: req.user._id    
         }).select('video_id type_like');
         
-        console.log(`❤️ ${userLikes.length} likes trouvés pour l'utilisateur`);
+        console.log(` ${userLikes.length} likes trouvés pour l'utilisateur`);
       } catch (likeError) {
-        console.warn('⚠️ Erreur lors de la récupération des likes (non critique):', likeError.message);
+        console.warn(' Erreur lors de la récupération des likes (non critique):', likeError.message);
         userLikes = [];
       }
     }
     
-    // ⚠️ CORRECTION: Ajouter les informations d'interaction utilisateur avec sécurité
+    
     const videosWithInteraction = videos.map(video => {
       try {
         const videoObj = video.toObject();
         
         if (req.user && req.user._id) {
-          // ⚠️ CORRECTION: Vérifier que video_id existe et utiliser les bons noms de champs
+        
           const userLike = userLikes.find(like => 
             like && 
             like.video_id && 
-            like.video_id.toString() === video._id.toString()  // Comparaison sécurisée
+            like.video_id.toString() === video._id.toString() 
           );
           
           videoObj.userInteraction = {
@@ -133,7 +133,7 @@ exports.getPublicVideos = async (req, res, next) => {
         
         return videoObj;
       } catch (videoError) {
-        console.warn('⚠️ Erreur lors du traitement d\'une vidéo:', videoError.message);
+        console.warn(' Erreur lors du traitement d\'une vidéo:', videoError.message);
         // Retourner la vidéo sans interactions en cas d'erreur
         const videoObj = video.toObject();
         videoObj.userInteraction = { liked: false, disliked: false };
@@ -159,8 +159,8 @@ exports.getPublicVideos = async (req, res, next) => {
       }
     });
   } catch (err) {
-    console.error('❌ Error getting public videos:', err);
-    console.error('📋 Stack trace:', err.stack);
+    console.error(' Error getting public videos:', err);
+    console.error(' Stack trace:', err.stack);
     
     // Réponse d'erreur sécurisée
     res.status(500).json({
