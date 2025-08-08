@@ -4,11 +4,10 @@ const { Schema, model } = mongoose;
 
 // Liste des genres musicaux possibles
 const GENRES = [
-  'Pop', 'Rock', 'Hip-Hop', 'Rap', 'R&B', 'Soul', 'Jazz', 'Blues', 
-  'Electronic', 'Dance', 'House', 'Techno', 'Country', 'Folk', 
-  'Classical', 'Opera', 'Reggae', 'Reggaeton', 'Latin', 'World', 
-  'Alternative', 'Indie', 'Metal', 'Punk', 'Funk', 'Disco', 
-  'Gospel', 'Soundtrack', 'Other'
+    'Pop', 'Rock', 'Hip-Hop', 'Rap', 'R&B', 'Soul', 'Jazz', 'Blues', 'Electronic', 
+    'Dance', 'House', 'Techno', 'Country', 'Folk', 'Classical', 'Opera', 'Reggae', 'Latin', 
+    'World', 'Afro', 'Alternative', 'Indie', 'Metal', 'Punk', 'Gospel', 'Funk', 'Disco', 
+    'Ska', 'Salsa', 'Bachata', 'Merengue', 'Tango', 'Other'
 ];
 
 const videoSchema = new Schema({
