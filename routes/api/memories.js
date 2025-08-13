@@ -20,10 +20,17 @@ router.post('/memories/:id/dislike', protect, memoryController.dislikeMemory);
 router.delete('/memories/:id', protect, memoryController.deleteMemory);
 // router.get('/memories/:id/replies', memoryController.getMemoryReplies);
 // router.post('/memories/:id/replies', protect, memoryController.addReply);
-router.post('/memories/:id/report', protect, memoryController.reportMemory);
+// router.post('/memories/:id/report', protect, memoryController.reportMemory);
 
+// router.get('/:id/replies', memoryController.getMemoryReplies);
+// router.post('/:id/replies', protect, memoryController.addReply);
+// router.delete('/:id/replies/:replyId', protect, memoryController.deleteReply);
+
+
+// Routes pour les réponses aux souvenirs
 router.get('/:id/replies', memoryController.getMemoryReplies);
 router.post('/:id/replies', protect, memoryController.addReply);
-router.delete('/:id/replies/:replyId', protect, memoryController.deleteReply);
 
+// Route pour le signalement
+router.post('/:id/report', protect, memoryController.reportMemory);
 module.exports = router;

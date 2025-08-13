@@ -820,11 +820,16 @@ exports.reportMemory = async (req, res) => {
   }
 };
 
+// controllers/memoryController.js
 exports.addReply = async (req, res) => {
   try {
+    console.log('📝 Ajout d\'une réponse au souvenir:', req.params.id);
+    console.log('👤 Utilisateur:', req.user ? req.user.id : 'Non authentifié');
+    console.log('📄 Contenu:', req.body.contenu);
+    
     const { id: memoryId } = req.params;
     const { contenu } = req.body;
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.id;
     
     // Validation du contenu
     if (!contenu || contenu.trim().length === 0) {
@@ -844,11 +849,14 @@ exports.addReply = async (req, res) => {
     // Vérifier que le souvenir parent existe
     const parentMemory = await Comment.findById(memoryId);
     if (!parentMemory) {
+      console.log('❌ Souvenir parent non trouvé:', memoryId);
       return res.status(404).json({
         success: false,
         message: "Souvenir parent non trouvé"
       });
     }
+    
+    console.log('✅ Souvenir parent trouvé:', parentMemory._id);
     
     // Créer la réponse
     const reply = new Comment({
@@ -867,6 +875,7 @@ exports.addReply = async (req, res) => {
     });
     
     await reply.save();
+    console.log('✅ Réponse enregistrée avec ID:', reply._id);
     
     // Récupérer la réponse avec les informations de l'auteur
     const populatedReply = await Comment.findById(reply._id)
@@ -892,10 +901,36 @@ exports.addReply = async (req, res) => {
       data: formattedReply
     });
   } catch (err) {
-    console.error("Erreur lors de l'ajout de la réponse:", err);
+    console.error("❌ Erreur lors de l'ajout de la réponse:", err);
     res.status(500).json({
       success: false,
       message: "Une erreur est survenue lors de l'ajout de la réponse"
+    });
+  }
+};
+
+// Assurez-vous que cette fonction est exportée correctement
+exports.getMemory = async (req, res) => {
+  try {
+    const memory = await Comment.findById(req.params.id)
+      .populate('auteur', 'nom prenom photo_profil');
+    
+    if (!memory) {
+      return res.status(404).json({
+        success: false,
+        message: "Souvenir non trouvé"
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: memory
+    });
+  } catch (err) {
+    console.error("Erreur lors de la récupération du souvenir:", err);
+    res.status(500).json({
+      success: false,
+      message: "Une erreur est survenue lors de la récupération du souvenir"
     });
   }
 };

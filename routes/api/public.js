@@ -29,4 +29,9 @@ router.post('/videos/:id/memories', protect, memoryController.addMemory);
 // Dans routes/api/public.js
 router.get('/memories/recent', memoryController.getRecentMemories);
 
+// routes/api/public.js
+// Ajouter ces routes si elles n'existent pas déjà
+router.get('/memories/:id/replies', memoryController.getMemoryReplies);
+router.post('/memories/:id/replies', protect, memoryController.addReply);
+
 module.exports = router;
