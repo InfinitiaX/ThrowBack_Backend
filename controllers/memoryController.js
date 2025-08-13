@@ -124,6 +124,8 @@ exports.getVideoMemories = async (req, res) => {
 };
 
 
+// controllers/memoryController.js 
+
 /**
  * @desc    Ajouter un souvenir (commentaire) à une vidéo
  * @route   POST /api/videos/:id/memories
