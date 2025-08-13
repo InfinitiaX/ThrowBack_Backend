@@ -26,7 +26,15 @@ router.post('/videos/:id/share', protect, (req, res) => {
 // Routes pour les souvenirs/commentaires
 router.get('/videos/:id/memories', optionalAuth, memoryController.getVideoMemories);
 router.post('/videos/:id/memories', protect, memoryController.addMemory);
-// Dans routes/api/public.js
 router.get('/memories/recent', memoryController.getRecentMemories);
+
+// Routes pour les souvenirs spécifiques
+router.get('/memories/:id', memoryController.getMemory);
+router.post('/memories/:id/like', protect, memoryController.likeMemory);
+router.post('/memories/:id/dislike', protect, memoryController.dislikeMemory);
+
+// Routes pour les réponses
+router.get('/memories/:id/replies', memoryController.getMemoryReplies);
+router.post('/memories/:id/replies', protect, memoryController.addReply);
 
 module.exports = router;

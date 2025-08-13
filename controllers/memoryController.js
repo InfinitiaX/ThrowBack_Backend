@@ -123,8 +123,28 @@ exports.getVideoMemories = async (req, res) => {
   }
 };
 
-
-// controllers/memoryController.js 
+// Dans controllers/memoryController.js
+exports.getAllMemories = async (req, res) => {
+  try {
+    const memories = await Memory.find()
+      .populate('auteur', 'nom prenom photo_profil')
+      .populate('video', 'titre artiste annee')
+      .sort({ createdAt: -1 })
+      .limit(100);
+    
+    res.status(200).json({
+      success: true,
+      count: memories.length,
+      data: memories
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des souvenirs:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des souvenirs'
+    });
+  }
+};
 
 /**
  * @desc    Ajouter un souvenir (commentaire) à une vidéo
@@ -796,6 +816,164 @@ exports.reportMemory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Une erreur est survenue lors du signalement du souvenir"
+    });
+  }
+};
+
+exports.addReply = async (req, res) => {
+  try {
+    const { id: memoryId } = req.params;
+    const { contenu } = req.body;
+    const userId = req.user._id;
+    
+    // Validation du contenu
+    if (!contenu || contenu.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Le contenu de la réponse est requis"
+      });
+    }
+    
+    if (contenu.length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: "Le contenu de la réponse ne doit pas dépasser 500 caractères"
+      });
+    }
+    
+    // Vérifier que le souvenir parent existe
+    const parentMemory = await Comment.findById(memoryId);
+    if (!parentMemory) {
+      return res.status(404).json({
+        success: false,
+        message: "Souvenir parent non trouvé"
+      });
+    }
+    
+    // Créer la réponse
+    const reply = new Comment({
+      contenu: contenu.trim(),
+      video_id: parentMemory.video_id, // Même vidéo que le commentaire parent
+      auteur: userId,
+      parent_comment: memoryId,
+      statut: 'ACTIF',
+      creation_date: Date.now(),
+      created_by: userId,
+      likes: 0,
+      dislikes: 0,
+      liked_by: [],
+      disliked_by: [],
+      signale_par: []
+    });
+    
+    await reply.save();
+    
+    // Récupérer la réponse avec les informations de l'auteur
+    const populatedReply = await Comment.findById(reply._id)
+      .populate('auteur', 'nom prenom photo_profil');
+    
+    // Retourner la réponse formatée pour l'affichage
+    const formattedReply = {
+      id: populatedReply._id,
+      content: populatedReply.contenu,
+      auteur: populatedReply.auteur,
+      likes: populatedReply.likes || 0,
+      creation_date: populatedReply.creation_date,
+      userInteraction: {
+        liked: false,
+        disliked: false,
+        isAuthor: true
+      }
+    };
+    
+    res.status(201).json({
+      success: true,
+      message: "Réponse ajoutée avec succès",
+      data: formattedReply
+    });
+  } catch (err) {
+    console.error("Erreur lors de l'ajout de la réponse:", err);
+    res.status(500).json({
+      success: false,
+      message: "Une erreur est survenue lors de l'ajout de la réponse"
+    });
+  }
+};
+
+// Améliorer la fonction deleteMemory pour gérer les réponses
+exports.deleteMemory = async (req, res) => {
+  try {
+    const { id: memoryId } = req.params;
+    const userId = req.user._id;
+    
+    // Vérifier que le souvenir existe
+    const memory = await Comment.findById(memoryId);
+    if (!memory) {
+      return res.status(404).json({
+        success: false,
+        message: "Souvenir non trouvé"
+      });
+    }
+    
+    // Vérifier que l'utilisateur est l'auteur ou un administrateur
+    const isAuthor = memory.auteur.equals(userId);
+    const isAdmin = req.user.role === 'admin' || 
+                   (Array.isArray(req.user.roles) && 
+                    req.user.roles.some(r => 
+                      r === 'admin' || 
+                      (r.libelle_role && r.libelle_role === 'admin')
+                    ));
+    
+    if (!isAuthor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Vous n'êtes pas autorisé à supprimer ce souvenir"
+      });
+    }
+    
+    // Si c'est un commentaire parent, supprimer aussi les réponses
+    if (!memory.parent_comment) {
+      // Soft delete - marquer toutes les réponses comme supprimées
+      await Comment.updateMany(
+        { parent_comment: memoryId },
+        { 
+          statut: 'SUPPRIME',
+          modified_date: Date.now(),
+          modified_by: userId
+        }
+      );
+    }
+    
+    // Soft delete du souvenir lui-même
+    memory.statut = 'SUPPRIME';
+    memory.modified_date = Date.now();
+    memory.modified_by = userId;
+    await memory.save();
+    
+    // Journal d'action
+    await LogAction.create({
+      type_action: "MEMOIRE_SUPPRIMEE",
+      description_action: "Souvenir supprimé",
+      id_user: userId,
+      ip_address: req.ip,
+      user_agent: req.headers['user-agent'],
+      created_by: userId,
+      donnees_supplementaires: {
+        video_id: memory.video_id,
+        memoire_id: memoryId,
+        est_reponse: !!memory.parent_comment
+      }
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: "Souvenir supprimé avec succès"
+    });
+  } catch (err) {
+    console.error("Erreur lors de la suppression du souvenir:", err);
+    res.status(500).json({
+      success: false,
+      message: "Une erreur est survenue lors de la suppression du souvenir"
     });
   }
 };
