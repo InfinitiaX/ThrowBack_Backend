@@ -27,6 +27,7 @@ let sessionStats = {
 
 /**
  * Tâche principale de nettoyage des statuts
+ * CORRIGÉE: Ajoute une marge de 2 minutes pour éviter d'interrompre les lectures en cours
  */
 const runStreamCleanup = async () => {
   try {
@@ -36,7 +37,12 @@ const runStreamCleanup = async () => {
     
     // Utiliser les fonctions des contrôleurs
     const started = await autoStartScheduledStreams();
-    const ended = await autoEndExpiredStreams();
+    
+    // Pour la fin des streams, être plus prudent:
+    // - Ne mettre fin qu'aux streams expirés depuis au moins 2 minutes
+    // pour éviter d'interrompre une vidéo en cours de lecture
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+    const ended = await autoEndExpiredStreams(twoMinutesAgo);
     
     const duration = Date.now() - startTime;
     
@@ -143,6 +149,41 @@ const runMaintenanceTasks = async () => {
 };
 
 /**
+ * Fonction améliorée pour terminer les streams expirés
+ * en respectant une période de grâce pour éviter d'interrompre les lectures
+ */
+const autoEndExpiredStreams = async (cutoffTime = new Date()) => {
+  try {
+    // Ne terminer que les streams qui sont expirés depuis plus longtemps
+    // que le temps de coupure spécifié (par défaut: maintenant)
+    const expiredStreams = await LiveStream.find({
+      status: 'LIVE',
+      scheduledEndTime: { $lt: cutoffTime }
+    });
+    
+    let endedCount = 0;
+    
+    for (const stream of expiredStreams) {
+      try {
+        stream.status = 'COMPLETED';
+        stream.actualEndTime = new Date();
+        await stream.save();
+        endedCount++;
+        
+        logger.info(`Ended expired stream: ${stream.title} (${stream._id})`);
+      } catch (error) {
+        logger.error(`Error ending stream ${stream._id}:`, error);
+      }
+    }
+    
+    return endedCount;
+  } catch (error) {
+    logger.error('Error in autoEndExpiredStreams:', error);
+    return 0;
+  }
+};
+
+/**
  * Gérer l'arrêt propre des tâches
  */
 const gracefulShutdown = () => {
@@ -200,7 +241,8 @@ const initializeStreamCleanup = () => {
       statsTask,
       maintenanceTask,
       getStats: () => ({ ...sessionStats }),
-      runManualCleanup: runStreamCleanup
+      runManualCleanup: runStreamCleanup,
+      autoEndExpiredStreams
     };
     
   } catch (error) {
@@ -251,7 +293,8 @@ module.exports = {
   logSessionStats,
   runMaintenanceTasks,
   healthCheck,
-  getStats: () => ({ ...sessionStats })
+  getStats: () => ({ ...sessionStats }),
+  autoEndExpiredStreams
 };
 
 // Auto-démarrage si ce fichier est exécuté directement

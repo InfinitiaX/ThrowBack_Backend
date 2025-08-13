@@ -13,6 +13,7 @@ const memorySchema = new Schema({
     required: true
   },
   // Référence au contenu associé (video ou podcast)
+  // Référence au contenu associé (video ou podcast)
   video: {
     type: Schema.Types.ObjectId,
     ref: 'Video'

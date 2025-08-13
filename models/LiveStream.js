@@ -26,8 +26,14 @@ const compilationVideoSchema = new Schema({
   thumbnailUrl: {
     type: String
   },
+  // MODIFICATION: Changer le type de duration de String à Number (en secondes)
   duration: {
-    type: String
+    type: Number,
+    default: function() {
+      // Durée par défaut basée sur le type de source
+      return this.sourceType === 'YOUTUBE' ? 240 : 
+             this.sourceType === 'VIMEO' ? 300 : 180;
+    }
   },
   channel: {
     type: String
@@ -256,6 +262,10 @@ const liveStreamSchema = new Schema({
     type: Number,
     default: 0
   },
+  // AJOUT: Temps de démarrage de la vidéo courante
+  currentVideoStartTime: {
+    type: Date
+  },
   // Ajout du champ pour les utilisateurs bannis
   bannedUsers: [{
     type: Schema.Types.ObjectId,
@@ -294,6 +304,51 @@ liveStreamSchema.pre('validate', function(next) {
     }
   }
 
+  next();
+});
+
+// AJOUT: Middleware pre-save pour traiter les durées de vidéos et initialiser currentVideoStartTime
+liveStreamSchema.pre('save', function(next) {
+  // Si c'est une compilation, s'assurer que chaque vidéo a une durée valide (en secondes)
+  if (this.compilationType === 'VIDEO_COLLECTION' && this.compilationVideos && this.compilationVideos.length > 0) {
+    this.compilationVideos = this.compilationVideos.map(video => {
+      // Si duration est une string, la convertir en nombre de secondes
+      if (typeof video.duration === 'string') {
+        const parts = video.duration.split(':').map(part => parseInt(part, 10));
+        let seconds = 0;
+        
+        if (parts.length === 3) { // format h:mm:ss
+          seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else if (parts.length === 2) { // format mm:ss
+          seconds = parts[0] * 60 + parts[1];
+        } else if (parts.length === 1) { // format ss
+          seconds = parts[0];
+        }
+        
+        if (seconds > 0) {
+          video.duration = seconds;
+        } else {
+          // Définir une durée par défaut basée sur le type
+          video.duration = video.sourceType === 'YOUTUBE' ? 240 : 
+                          video.sourceType === 'VIMEO' ? 300 : 180;
+        }
+      } 
+      // Si duration n'est pas définie ou est invalide
+      else if (!video.duration || video.duration < 30) {
+        // Définir une durée par défaut basée sur le type
+        video.duration = video.sourceType === 'YOUTUBE' ? 240 : 
+                         video.sourceType === 'VIMEO' ? 300 : 180;
+      }
+      
+      return video;
+    });
+  }
+  
+  // Si currentVideoStartTime n'est pas défini mais que le stream est LIVE, le définir
+  if (this.status === 'LIVE' && !this.currentVideoStartTime && this.actualStartTime) {
+    this.currentVideoStartTime = this.actualStartTime;
+  }
+  
   next();
 });
 
@@ -337,28 +392,35 @@ liveStreamSchema.virtual('isStartingSoon').get(function() {
   return timeDiff > 0 && timeDiff <= 30 * 60 * 1000; 
 });
 
-// Calculer la durée totale des vidéos dans la compilation
+// MODIFICATION: Mise à jour pour utiliser les durées en secondes
 liveStreamSchema.virtual('totalCompilationDuration').get(function() {
   if (!this.compilationVideos || this.compilationVideos.length === 0) return 0;
   
-  // Convertir les durées au format h:mm:ss en secondes
-  let totalSeconds = 0;
-  this.compilationVideos.forEach(video => {
-    if (video.duration) {
-      const parts = video.duration.split(':').map(part => parseInt(part));
-      if (parts.length === 3) { 
-        totalSeconds += parts[0] * 3600 + parts[1] * 60 + parts[2];
-      } else if (parts.length === 2) { 
-        totalSeconds += parts[0] * 60 + parts[1];
-      } else if (parts.length === 1) { 
-        totalSeconds += parts[0];
-      }
-    }
-  });
-  
-  return totalSeconds;
+  // Additionner les durées (déjà en secondes)
+  return this.compilationVideos.reduce((total, video) => {
+    return total + (video.duration || 0);
+  }, 0);
 });
 
+// AJOUT: Virtual pour calculer le temps restant pour la vidéo courante
+liveStreamSchema.virtual('currentVideoRemainingTime').get(function() {
+  if (!this.isLive || !this.currentVideoStartTime || !this.compilationVideos || 
+      this.compilationVideos.length === 0 || this.currentVideoIndex === undefined) {
+    return 0;
+  }
+  
+  const currentVideo = this.compilationVideos[this.currentVideoIndex];
+  if (!currentVideo || !currentVideo.duration) return 0;
+  
+  const now = new Date();
+  const elapsedSeconds = Math.floor((now - this.currentVideoStartTime) / 1000);
+  const remainingSeconds = Math.max(0, currentVideo.duration - elapsedSeconds);
+  
+  return remainingSeconds;
+});
+
+// Inclure les virtuals par défaut dans les objets JSON
+// Inclure les virtuals par défaut dans les objets JSON
 // Inclure les virtuals par défaut dans les objets JSON
 liveStreamSchema.set('toJSON', { virtuals: true });
 liveStreamSchema.set('toObject', { virtuals: true });
