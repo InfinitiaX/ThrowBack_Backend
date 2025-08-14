@@ -70,8 +70,8 @@ const initStreamScheduler = () => {
         try {
           stream.status = 'LIVE';
           stream.actualStartTime = now;
-          stream.currentVideoIndex = 0; // Commencer par la première vidéo
-          stream.currentVideoStartTime = now; // Horodatage de début de la première vidéo
+          stream.currentVideoIndex = 0; 
+          stream.currentVideoStartTime = now; 
           await stream.save();
           
           // Journaliser l'action

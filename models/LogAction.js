@@ -60,6 +60,7 @@ const logActionSchema = new Schema(
         'REPONSE_AJOUTEE',
         'MEMOIRE_SUPPRIMEE',
         'LIKE_PODCAST',
+        'AUTO_START_LIVESTREAM',
         'REMOVE_BOOKMARK_PODCAST',
         'SUPPRESSION_COMMENTAIRE',
         'ADD_PODCAST_MEMORY',
