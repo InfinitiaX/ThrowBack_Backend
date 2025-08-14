@@ -1,13 +1,12 @@
 // tasks/streamCleanup.js
 const cron = require('node-cron');
 const { cleanupStreamStatuses } = require('../controllers/userLiveStreamController');
-const { autoStartScheduledStreams } = require('../controllers/liveStreamController');
-const LiveStream = require('../models/LiveStream');
+const { autoStartScheduledStreams, autoEndExpiredStreams } = require('../controllers/liveStreamController');
 
 // Configuration
 const CLEANUP_INTERVAL = '* * * * *'; 
 const STATS_INTERVAL = '0 */6 * * *'; 
-const LOG_LEVEL = process.env.NODE_ENV === 'development' ? 'debug' : 'error';
+const LOG_LEVEL = process.env.NODE_ENV === 'development' ? 'debug' : 'info';
 
 // Logger personnalisé pour les tâches
 const logger = {
@@ -27,43 +26,7 @@ let sessionStats = {
 };
 
 /**
- * Fonction pour terminer les streams expirés
- * en respectant une période de grâce pour éviter d'interrompre les lectures
- */
-const autoEndExpiredStreams = async (cutoffTime = new Date()) => {
-  try {
-    // Ne terminer que les streams qui sont expirés depuis plus longtemps
-    // que le temps de coupure spécifié (par défaut: maintenant)
-    const expiredStreams = await LiveStream.find({
-      status: 'LIVE',
-      scheduledEndTime: { $lt: cutoffTime }
-    });
-    
-    let endedCount = 0;
-    
-    for (const stream of expiredStreams) {
-      try {
-        stream.status = 'COMPLETED';
-        stream.actualEndTime = new Date();
-        await stream.save();
-        endedCount++;
-        
-        logger.info(`Ended expired stream: ${stream.title} (${stream._id})`);
-      } catch (error) {
-        logger.error(`Error ending stream ${stream._id}:`, error);
-      }
-    }
-    
-    return endedCount;
-  } catch (error) {
-    logger.error('Error in autoEndExpiredStreams:', error);
-    return 0;
-  }
-};
-
-/**
  * Tâche principale de nettoyage des statuts
- * Utilise une marge de 2 minutes pour éviter d'interrompre les lectures en cours
  */
 const runStreamCleanup = async () => {
   try {
@@ -73,12 +36,7 @@ const runStreamCleanup = async () => {
     
     // Utiliser les fonctions des contrôleurs
     const started = await autoStartScheduledStreams();
-    
-    // Pour la fin des streams, être plus prudent:
-    // - Ne mettre fin qu'aux streams expirés depuis au moins 2 minutes
-    // pour éviter d'interrompre une vidéo en cours de lecture
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-    const ended = await autoEndExpiredStreams(twoMinutesAgo);
+    const ended = await autoEndExpiredStreams();
     
     const duration = Date.now() - startTime;
     
@@ -124,6 +82,7 @@ const runMaintenanceTasks = async () => {
   try {
     logger.info(' Running maintenance tasks...');
     
+    const LiveStream = require('../models/LiveStream');
     const LogAction = require('../models/LogAction');
     
     // 1. Nettoyer les anciennes actions de log 
@@ -285,15 +244,14 @@ const healthCheck = () => {
   return healthStatus;
 };
 
-// API pour usage externe - export unique des fonctions
+// API pour usage externe
 module.exports = {
   initializeStreamCleanup,
   runStreamCleanup,
   logSessionStats,
   runMaintenanceTasks,
   healthCheck,
-  getStats: () => ({ ...sessionStats }),
-  autoEndExpiredStreams  // Export unique
+  getStats: () => ({ ...sessionStats })
 };
 
 // Auto-démarrage si ce fichier est exécuté directement
