@@ -40,13 +40,11 @@ const updateStreamStatuses = async () => {
       logger.info(`Auto-started ${streamsToStart.modifiedCount} scheduled streams`);
     }
 
-    // Terminer automatiquement les streams dont l'heure de fin est dépassée depuis au moins 2 minutes
-    // Cette marge permet d'éviter d'interrompre une vidéo en cours de lecture
-    const twoMinutesAgo = new Date(now.getTime() - 2 * 60 * 1000);
+    // Terminer automatiquement les streams dont l'heure de fin est dépassée
     const streamsToEnd = await LiveStream.updateMany(
       {
         status: 'LIVE',
-        scheduledEndTime: { $lte: twoMinutesAgo }
+        scheduledEndTime: { $lte: now }
       },
       {
         $set: {
@@ -72,7 +70,6 @@ const updateStreamStatuses = async () => {
 
 /**
  * Fonction pour gérer la progression des compilations vidéo
- * CORRIGÉE: Calcul précis des temps, prise en compte des durées vidéo
  */
 const updateCompilationProgress = async (streamId) => {
   try {
@@ -84,63 +81,21 @@ const updateCompilationProgress = async (streamId) => {
 
     const now = new Date();
     const startTime = stream.actualStartTime || stream.scheduledStartTime;
-    
-    // Calculer le temps écoulé en secondes pour plus de précision (au lieu de minutes)
-    const elapsedSeconds = Math.floor((now - startTime) / 1000);
-    
-    // Fonction pour obtenir la durée d'une vidéo (en secondes)
-    const getVideoDuration = (video) => {
-      // Utiliser la durée réelle de la vidéo si disponible
-      if (video.duration) return video.duration;
-      
-      // Sinon estimer en fonction du type
-      if (video.sourceType === 'YOUTUBE' && video.sourceId && video.sourceId.length === 11) {
-        return 240; // Durée YouTube moyenne en secondes (4 minutes)
-      }
-      return 180; // Durée par défaut (3 minutes)
-    };
+    const elapsedMinutes = Math.floor((now - startTime) / (1000 * 60));
 
-    // Calculer l'index courant en fonction du temps réellement écoulé
-    let accumulatedTime = 0;
-    let newIndex = 0;
-    
-    // Simuler la progression à travers la playlist pour trouver l'index actuel
-    for (let i = 0; i < videos.length; i++) {
-      const videoDuration = getVideoDuration(videos[i]);
-      if (accumulatedTime + videoDuration > elapsedSeconds) {
-        newIndex = i;
-        break;
-      }
-      accumulatedTime += videoDuration;
-      
-      // Si on a parcouru toute la playlist, recommencer (mode boucle)
-      if (i === videos.length - 1) {
-        // Si on atteint la fin, recommencer au début en mode boucle
-        i = -1; // -1 car l'incrémentation du for le fera passer à 0
-        
-        // Mais seulement si on n'a pas dépassé un nombre raisonnable de répétitions
-        if (accumulatedTime > elapsedSeconds * 3) {
-          newIndex = 0;
-          break;
-        }
-      }
-    }
-
-    // Ne mettre à jour que si l'index a changé ou si currentVideoStartTime n'existe pas
-    if (stream.currentVideoIndex !== newIndex || !stream.currentVideoStartTime) {
-      // Stocker l'ancien index pour logging
-      const oldIndex = stream.currentVideoIndex;
-      
-      // Mettre à jour l'index
+    // Si une seule vidéo, elle tourne en boucle
+    if (videos.length === 1) {
+      stream.currentVideoIndex = 0;
+    } else {
+      // Plusieurs vidéos : calculer l'index basé sur la durée écoulée
+      // Supposons 4 minutes par vidéo en moyenne
+      const avgVideoDuration = 4; // minutes
+      const newIndex = Math.floor(elapsedMinutes / avgVideoDuration) % videos.length;
       stream.currentVideoIndex = newIndex;
-      
-      // Stocker également le temps de démarrage de la vidéo actuelle
-      stream.currentVideoStartTime = new Date(startTime.getTime() + (accumulatedTime * 1000));
-      
-      await stream.save();
-      logger.debug(`Updated compilation progress for stream ${streamId}, video index: ${oldIndex} -> ${newIndex}, start time: ${stream.currentVideoStartTime}`);
     }
-    
+
+    await stream.save();
+    logger.debug(`Updated compilation progress for stream ${streamId}, video index: ${stream.currentVideoIndex}`);
     return stream;
   } catch (error) {
     logger.error('Error updating compilation progress:', error);
@@ -205,15 +160,10 @@ exports.getActiveLiveStreams = async (req, res) => {
       }
     }
 
-    // Recharger les streams avec les informations mises à jour
-    const updatedLivestreams = await LiveStream.find(filter)
-      .populate('author', 'nom prenom photo_profil')
-      .sort('-actualStartTime -scheduledStartTime');
-
-    logger.debug(`Found ${updatedLivestreams.length} active livestreams`);
+    logger.debug(`Found ${livestreams.length} active livestreams`);
     
     // Données de test seulement si aucun stream actif ET en développement
-    if (updatedLivestreams.length === 0 && process.env.NODE_ENV === 'development') {
+    if (livestreams.length === 0 && process.env.NODE_ENV === 'development') {
       logger.debug('Returning test livestream data for development');
       const testStream = {
         _id: new mongoose.Types.ObjectId(),
@@ -231,7 +181,6 @@ exports.getActiveLiveStreams = async (req, res) => {
         scheduledEndTime: new Date(Date.now() + 3600000), // Se termine dans 1 heure
         actualStartTime: new Date(Date.now() - 60000),
         currentVideoIndex: 0,
-        currentVideoStartTime: new Date(Date.now() - 60000), // Ajout de cette propriété
         playbackConfig: {
           loop: true,
           autoplay: true,
@@ -251,15 +200,13 @@ exports.getActiveLiveStreams = async (req, res) => {
             sourceId: "v_Uy0NpRqBOI",
             sourceType: "YOUTUBE",
             title: "IAM - Je danse le Mia",
-            thumbnailUrl: "/images/thumbnails/iam-mia.jpg",
-            duration: 240 // Durée en secondes
+            thumbnailUrl: "/images/thumbnails/iam-mia.jpg"
           },
           {
             sourceId: "aDTwIu-pTJQ",
             sourceType: "YOUTUBE", 
             title: "Suprême NTM - C'est arrivé près d'chez toi",
-            thumbnailUrl: "/images/thumbnails/ntm-arrivé.jpg",
-            duration: 300 // Durée en secondes
+            thumbnailUrl: "/images/thumbnails/ntm-arrivé.jpg"
           }
         ]
       };
@@ -288,8 +235,8 @@ exports.getActiveLiveStreams = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      count: updatedLivestreams.length,
-      data: updatedLivestreams
+      count: livestreams.length,
+      data: livestreams
     });
   } catch (error) {
     logger.error('Error fetching livestreams for users:', error);
