@@ -768,3 +768,53 @@ exports.toggleFavorite = async (req, res) => {
     });
   }
 };
+
+
+// controllers/userPlaylistController.js
+const Playlist = require('../models/Playlist');
+
+// Liste publique "populaire"
+exports.getPopularPlaylists = async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '20', 10), 50);
+    const playlists = await Playlist.find({ visibilite: 'PUBLIC' })
+      .sort({ nb_lectures: -1 })
+      .limit(limit)
+      .select('nom description image_couverture nb_lectures nb_favoris creation_date proprietaire');
+    res.json({ success: true, data: playlists });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur listes populaires', error: err.message });
+  }
+};
+
+// (facultatif mais utile si tes routes les appellent déjà)
+exports.deletePlaylist = async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const { id } = req.params;
+    const Playlist = require('../models/Playlist');
+
+    const pl = await Playlist.findById(id);
+    if (!pl) return res.status(404).json({ success: false, message: 'Playlist non trouvée' });
+
+    const ownerId = pl.proprietaire?._id || pl.proprietaire;
+    if (!ownerId || ownerId.toString() !== userId.toString()) {
+      return res.status(403).json({ success: false, message: "Non autorisé à supprimer cette playlist" });
+    }
+
+    await pl.deleteOne();
+    res.json({ success: true, message: 'Playlist supprimée' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur suppression playlist', error: err.message });
+  }
+};
+
+// (facultatif) stub de partage pour éviter undefined si déjà routé
+exports.sharePlaylist = async (req, res) => {
+  try {
+    // Implémentation basique/no-op
+    res.json({ success: true, message: 'Partage enregistré (placeholder)' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Erreur partage playlist', error: err.message });
+  }
+};
