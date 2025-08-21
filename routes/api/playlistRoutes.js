@@ -1,26 +1,26 @@
 // routes/api/playlistRoutes.js
 const express = require('express');
 const router = express.Router();
-const playlistController = require('../../controllers/userPlaylistController');
+const userPlaylistController = require('../../controllers/userPlaylistController');
 const { protect } = require('../../middlewares/authMiddleware');
 
 // Routes publiques
-router.get('/popular', playlistController.getPopularPlaylists);
+router.get('/popular', userPlaylistController.getPopularPlaylists);
 
 // Routes protégées
-router.post('/', protect, playlistController.createPlaylist);
-router.get('/user', protect, playlistController.getUserPlaylists);
+router.post('/', protect, userPlaylistController.createPlaylist);
+router.get('/user', protect, userPlaylistController.getUserPlaylists);
 
 // Routes avec paramètres
-router.get('/:id', playlistController.getPlaylistById);
-router.put('/:id', protect, playlistController.updatePlaylist);
-router.delete('/:id', protect, playlistController.deletePlaylist);
-router.post('/:id/favorite', protect, playlistController.toggleFavorite);
-router.post('/:id/share', protect, playlistController.sharePlaylist);
+router.get('/:id', userPlaylistController.getPlaylistById);
+router.put('/:id', protect, userPlaylistController.updatePlaylist);
+router.delete('/:id', protect, userPlaylistController.deletePlaylist);
+router.post('/:id/favorite', protect, userPlaylistController.toggleFavorite);
+router.post('/:id/share', protect, userPlaylistController.sharePlaylist);
 
 // Routes pour les vidéos d'une playlist
-router.post('/:id/videos', protect, playlistController.addVideoToPlaylist);
-router.delete('/:id/videos/:videoId', protect, playlistController.removeVideoFromPlaylist);
-router.put('/:id/reorder', protect, playlistController.reorderPlaylist);
+router.post('/:id/videos', protect, userPlaylistController.addVideoToPlaylist);
+router.delete('/:id/videos/:videoId', protect, userPlaylistController.removeVideoFromPlaylist);
+router.put('/:id/reorder', protect, userPlaylistController.reorderPlaylist);
 
 module.exports = router;
