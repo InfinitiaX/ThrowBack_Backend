@@ -732,13 +732,11 @@ try {
 console.log("🎵 Configuration des routes de playlists...");
 
 // Routes générales des playlists
-try {
-  const playlistRoutes = require('./routes/api/playlistRoutes');
-  app.use('/api/playlists', playlistRoutes);
-  console.log(" Routes générales playlists chargées avec succès");
-} catch (error) {
-  console.warn(" Routes générales playlists non disponibles:", error.message);
-}
+// Importer les routes de playlist
+const playlistRoutes = require('./routes/api/playlistRoutes');
+
+// Enregistrer les routes (à ajouter avec les autres routes)
+app.use('/api/playlists', playlistRoutes);
 
 // Routes admin des playlists
 try {
