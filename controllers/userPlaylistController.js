@@ -770,8 +770,6 @@ exports.toggleFavorite = async (req, res) => {
 };
 
 
-// controllers/userPlaylistController.js
-const Playlist = require('../models/Playlist');
 
 // Liste publique "populaire"
 exports.getPopularPlaylists = async (req, res) => {
