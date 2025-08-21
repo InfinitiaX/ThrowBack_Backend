@@ -114,6 +114,92 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
+// ===== Ajout de ces middlewares CORS dans index.js après la définition de corsOptions =====
+// Middleware spécifique pour les ressources statiques
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.header('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  next();
+}, express.static(path.join(__dirname, "uploads"), {
+  maxAge: '1d', // Mise en cache d'un jour
+  setHeaders: (res) => {
+    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
+
+// Middleware pour le contenu vidéo
+app.use('/uploads/shorts', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.header('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  res.header('Accept-Ranges', 'bytes'); // Support du streaming avec plages
+  next();
+}, express.static(path.join(__dirname, "uploads/shorts"), {
+  setHeaders: (res) => {
+    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
+
+// Middleware pour les images de profil
+app.use('/uploads/profiles', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(path.join(__dirname, "uploads/profiles"), {
+  maxAge: '7d', // Mise en cache d'une semaine
+  setHeaders: (res) => {
+    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
+
+// Middleware pour les ressources statiques publiques (images, etc.)
+app.use(express.static(path.join(__dirname, "public"), {
+  maxAge: '30d', // Mise en cache d'un mois
+  setHeaders: (res) => {
+    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
+
+// Middleware pour gérer le streaming de vidéo avec byte ranges
+app.get('/uploads/*/stream', (req, res, next) => {
+  const videoPath = req.path.replace('/stream', '');
+  const fullPath = path.join(__dirname, videoPath);
+  
+  const fs = require('fs');
+  const stat = fs.statSync(fullPath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+  
+  if (range) {
+    const parts = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunksize = (end - start) + 1;
+    const file = fs.createReadStream(fullPath, { start, end });
+    
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunksize,
+      'Content-Type': 'video/mp4',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Access-Control-Allow-Origin': '*'
+    });
+    
+    file.pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type': 'video/mp4',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Access-Control-Allow-Origin': '*'
+    });
+    
+    fs.createReadStream(fullPath).pipe(res);
+  }
+});
+
 // ===== Configuration de session =====
 app.use(session({
   secret: process.env.SESSION_SECRET || 'throwback-secret-key',

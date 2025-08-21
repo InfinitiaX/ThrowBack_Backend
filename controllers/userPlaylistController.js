@@ -1,4 +1,4 @@
-// controllers/userPlaylistController.js
+// controllers/userPlaylistController.js - Version corrigée
 const Playlist = require('../models/Playlist');
 const Video = require('../models/Video');
 const LogAction = require('../models/LogAction');
@@ -11,8 +11,9 @@ const mongoose = require('mongoose');
  */
 exports.createPlaylist = async (req, res) => {
   try {
-    const { nom, description, videos = [], visibilite = 'PUBLIC' } = req.body;
-    const userId = req.user._id;
+    console.log("createPlaylist - Données reçues:", req.body);
+    const { nom, description, videos = [], visibilite = 'PUBLIC', image_couverture } = req.body;
+    const userId = req.user._id || req.user.id;
 
     // Validation de base
     if (!nom) {
@@ -28,53 +29,90 @@ exports.createPlaylist = async (req, res) => {
       description,
       proprietaire: userId,
       visibilite,
+      image_couverture,
       created_by: userId
     });
 
     // Ajouter les vidéos si présentes
     if (videos && videos.length > 0) {
+      console.log("Ajout des vidéos à la playlist:", videos);
+      
+      // Récupérer les IDs des vidéos (plusieurs formats possibles)
+      const videoIds = videos.map(v => {
+        if (typeof v === 'object' && v !== null) {
+          return v.videoId || v._id;
+        }
+        return v;
+      });
+      
+      console.log("IDs des vidéos extraits:", videoIds);
+      
       // Vérifier que toutes les vidéos existent
-      const videoIds = videos.map(v => typeof v === 'object' ? v.videoId : v);
       const existingVideos = await Video.find({ _id: { $in: videoIds } });
+      console.log(`Vidéos trouvées: ${existingVideos.length}/${videoIds.length}`);
       
       if (existingVideos.length !== videoIds.length) {
-        return res.status(400).json({
-          success: false,
-          message: "Une ou plusieurs vidéos n'existent pas"
-        });
+        console.warn("Certaines vidéos n'ont pas été trouvées");
+        // On continue quand même avec les vidéos trouvées
       }
 
       // Ajouter les vidéos à la playlist avec leur ordre
       existingVideos.forEach((video, index) => {
+        // Trouver l'ordre spécifié ou utiliser l'index
+        const videoItem = videos.find(v => {
+          if (typeof v === 'object' && v !== null) {
+            const videoId = v.videoId || v._id;
+            return videoId && videoId.toString() === video._id.toString();
+          }
+          return v && v.toString() === video._id.toString();
+        });
+        
+        const ordre = (videoItem && typeof videoItem === 'object' && videoItem.ordre) 
+                    ? videoItem.ordre 
+                    : index + 1;
+        
         playlist.videos.push({
           video_id: video._id,
-          ordre: index + 1,
+          ordre: ordre,
+          date_ajout: new Date(),
           ajoute_par: userId
         });
       });
 
       // Mettre à jour les métadonnées des vidéos pour référencer cette playlist
-      await Video.updateMany(
-        { _id: { $in: videoIds } },
-        { $addToSet: { 'meta.playlists': playlist._id } }
-      );
+      try {
+        await Video.updateMany(
+          { _id: { $in: existingVideos.map(v => v._id) } },
+          { $addToSet: { 'meta.playlists': playlist._id } }
+        );
+        console.log("Métadonnées des vidéos mises à jour");
+      } catch (metaErr) {
+        console.error("Erreur lors de la mise à jour des métadonnées des vidéos:", metaErr);
+        // Continue sans bloquer
+      }
     }
 
     await playlist.save();
+    console.log("Playlist créée avec succès:", playlist._id);
 
     // Journal d'action
-    await LogAction.create({
-      type_action: "PLAYLIST_CREEE",
-      description_action: `Playlist "${nom}" créée`,
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        playlist_id: playlist._id,
-        playlist_nom: nom
-      }
-    });
+    try {
+      await LogAction.create({
+        type_action: "PLAYLIST_CREEE",
+        description_action: `Playlist "${nom}" créée`,
+        id_user: userId,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        created_by: userId,
+        donnees_supplementaires: {
+          playlist_id: playlist._id,
+          playlist_nom: nom
+        }
+      });
+    } catch (logErr) {
+      console.error("Erreur lors de la journalisation:", logErr);
+      // Continue sans bloquer
+    }
 
     res.status(201).json({
       success: true,
@@ -85,7 +123,8 @@ exports.createPlaylist = async (req, res) => {
     console.error("Erreur lors de la création de la playlist:", err);
     res.status(500).json({
       success: false,
-      message: "Une erreur est survenue lors de la création de la playlist"
+      message: "Une erreur est survenue lors de la création de la playlist",
+      error: err.message
     });
   }
 };
@@ -97,16 +136,26 @@ exports.createPlaylist = async (req, res) => {
  */
 exports.getUserPlaylists = async (req, res) => {
   try {
-    const userId = req.user._id;
+    console.log("getUserPlaylists - Utilisateur:", req.user.id || req.user._id);
+    const userId = req.user._id || req.user.id;
 
     const playlists = await Playlist.find({ proprietaire: userId })
       .sort({ creation_date: -1 })
-      .select('nom description visibilite videos nb_lectures nb_favoris creation_date');
+      .select('nom description visibilite videos nb_lectures nb_favoris image_couverture creation_date')
+      .populate({
+        path: 'videos.video_id',
+        select: 'titre artiste thumbnail duree'
+      });
+
+    console.log(`${playlists.length} playlists trouvées`);
 
     // Compter le nombre de vidéos pour chaque playlist
     const playlistsWithCounts = playlists.map(playlist => {
       const playlistObj = playlist.toObject();
       playlistObj.nb_videos = playlist.videos ? playlist.videos.length : 0;
+      // Vérifier si l'utilisateur a mis la playlist en favori
+      playlistObj.isFavorite = playlist.favori_par && 
+                               playlist.favori_par.some(id => id.toString() === userId.toString());
       return playlistObj;
     });
 
@@ -118,7 +167,8 @@ exports.getUserPlaylists = async (req, res) => {
     console.error("Erreur lors de la récupération des playlists:", err);
     res.status(500).json({
       success: false,
-      message: "Une erreur est survenue lors de la récupération des playlists"
+      message: "Une erreur est survenue lors de la récupération des playlists",
+      error: err.message
     });
   }
 };
@@ -130,25 +180,33 @@ exports.getUserPlaylists = async (req, res) => {
  */
 exports.getPlaylistById = async (req, res) => {
   try {
+    console.log("getPlaylistById - ID:", req.params.id);
     const { id } = req.params;
-    const userId = req.user ? req.user._id : null;
+    const userId = req.user ? (req.user._id || req.user.id) : null;
 
     const playlist = await Playlist.findById(id)
       .populate({
         path: 'videos.video_id',
-        select: 'titre artiste type youtubeUrl annee vues likes'
+        select: 'titre artiste type youtubeUrl annee vues likes thumbnail duree'
       })
       .populate('proprietaire', 'nom prenom photo_profil');
 
     if (!playlist) {
+      console.log("Playlist non trouvée");
       return res.status(404).json({
         success: false,
         message: "Playlist non trouvée"
       });
     }
 
+    console.log("Playlist trouvée:", playlist._id);
+
     // Vérifier les permissions d'accès
-    if (playlist.visibilite === 'PRIVE' && (!userId || !playlist.proprietaire._id.equals(userId))) {
+    if (playlist.visibilite === 'PRIVE' && 
+        (!userId || 
+         (playlist.proprietaire._id.toString() !== userId.toString() && 
+          playlist.proprietaire.toString() !== userId.toString()))) {
+      console.log("Accès refusé (playlist privée)");
       return res.status(403).json({
         success: false,
         message: "Vous n'avez pas l'autorisation d'accéder à cette playlist"
@@ -158,7 +216,9 @@ exports.getPlaylistById = async (req, res) => {
     if (playlist.visibilite === 'AMIS') {
       // TODO: Vérifier si l'utilisateur est ami avec le propriétaire
       // Pour l'instant, seul le propriétaire peut voir
-      if (!userId || !playlist.proprietaire._id.equals(userId)) {
+      const ownerId = playlist.proprietaire._id || playlist.proprietaire;
+      if (!userId || (ownerId.toString() !== userId.toString())) {
+        console.log("Accès refusé (playlist amis uniquement)");
         return res.status(403).json({
           success: false,
           message: "Vous n'avez pas l'autorisation d'accéder à cette playlist"
@@ -167,19 +227,38 @@ exports.getPlaylistById = async (req, res) => {
     }
 
     // Incrémenter le compteur de lectures
-    if (userId && !playlist.proprietaire._id.equals(userId)) {
+    if (userId && playlist.proprietaire && 
+        playlist.proprietaire._id && 
+        playlist.proprietaire._id.toString() !== userId.toString()) {
       playlist.nb_lectures += 1;
       await playlist.save();
+      console.log("Compteur de lectures incrémenté");
     }
 
     // Vérifier si l'utilisateur a mis la playlist en favori
     let isFavorite = false;
     if (userId) {
-      isFavorite = playlist.favori_par.some(id => id.equals(userId));
+      isFavorite = playlist.favori_par && 
+                  playlist.favori_par.some(id => id.toString() === userId.toString());
     }
 
     // Trier les vidéos par ordre
-    playlist.videos.sort((a, b) => a.ordre - b.ordre);
+    if (playlist.videos) {
+      playlist.videos.sort((a, b) => a.ordre - b.ordre);
+    }
+
+    // Vérifier et compléter les URLs des vidéos
+    if (playlist.videos && playlist.videos.length > 0) {
+      playlist.videos.forEach(videoItem => {
+        if (videoItem.video_id && videoItem.video_id.youtubeUrl) {
+          // Si l'URL n'est pas complète, ajouter le domaine de base
+          if (!videoItem.video_id.youtubeUrl.startsWith('http') && 
+              !videoItem.video_id.youtubeUrl.startsWith('/')) {
+            videoItem.video_id.youtubeUrl = '/' + videoItem.video_id.youtubeUrl;
+          }
+        }
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -192,7 +271,8 @@ exports.getPlaylistById = async (req, res) => {
     console.error("Erreur lors de la récupération de la playlist:", err);
     res.status(500).json({
       success: false,
-      message: "Une erreur est survenue lors de la récupération de la playlist"
+      message: "Une erreur est survenue lors de la récupération de la playlist",
+      error: err.message
     });
   }
 };
@@ -204,9 +284,10 @@ exports.getPlaylistById = async (req, res) => {
  */
 exports.addVideoToPlaylist = async (req, res) => {
   try {
+    console.log("addVideoToPlaylist - Playlist:", req.params.id, "Vidéo:", req.body.videoId);
     const { id: playlistId } = req.params;
     const { videoId } = req.body;
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.id;
 
     if (!videoId) {
       return res.status(400).json({
@@ -225,6 +306,7 @@ exports.addVideoToPlaylist = async (req, res) => {
     });
 
     if (!playlist) {
+      console.log("Playlist non trouvée ou permissions insuffisantes");
       return res.status(404).json({
         success: false,
         message: "Playlist non trouvée ou permissions insuffisantes"
@@ -234,6 +316,7 @@ exports.addVideoToPlaylist = async (req, res) => {
     // Vérifier que la vidéo existe
     const video = await Video.findById(videoId);
     if (!video) {
+      console.log("Vidéo non trouvée");
       return res.status(404).json({
         success: false,
         message: "Vidéo non trouvée"
@@ -243,6 +326,7 @@ exports.addVideoToPlaylist = async (req, res) => {
     // Vérifier si la vidéo est déjà dans la playlist
     const videoExists = playlist.videos.some(v => v.video_id.equals(videoId));
     if (videoExists) {
+      console.log("Vidéo déjà dans la playlist");
       return res.status(400).json({
         success: false,
         message: "Cette vidéo est déjà dans la playlist"
@@ -259,28 +343,40 @@ exports.addVideoToPlaylist = async (req, res) => {
     });
 
     // Mettre à jour les métadonnées de la vidéo
-    await Video.findByIdAndUpdate(videoId, {
-      $addToSet: { 'meta.playlists': playlistId }
-    });
+    try {
+      await Video.findByIdAndUpdate(videoId, {
+        $addToSet: { 'meta.playlists': playlistId }
+      });
+      console.log("Métadonnées de la vidéo mises à jour");
+    } catch (metaErr) {
+      console.error("Erreur lors de la mise à jour des métadonnées de la vidéo:", metaErr);
+      // Continue sans bloquer
+    }
 
     // Sauvegarder les modifications
     await playlist.save();
+    console.log("Vidéo ajoutée à la playlist avec succès");
 
     // Journal d'action
-    await LogAction.create({
-      type_action: "VIDEO_AJOUTEE_PLAYLIST",
-      description_action: `Vidéo ajoutée à la playlist "${playlist.nom}"`,
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        playlist_id: playlistId,
-        playlist_nom: playlist.nom,
-        video_id: videoId,
-        video_titre: video.titre
-      }
-    });
+    try {
+      await LogAction.create({
+        type_action: "VIDEO_AJOUTEE_PLAYLIST",
+        description_action: `Vidéo ajoutée à la playlist "${playlist.nom}"`,
+        id_user: userId,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        created_by: userId,
+        donnees_supplementaires: {
+          playlist_id: playlistId,
+          playlist_nom: playlist.nom,
+          video_id: videoId,
+          video_titre: video.titre
+        }
+      });
+    } catch (logErr) {
+      console.error("Erreur lors de la journalisation:", logErr);
+      // Continue sans bloquer
+    }
 
     res.status(200).json({
       success: true,
@@ -295,7 +391,8 @@ exports.addVideoToPlaylist = async (req, res) => {
     console.error("Erreur lors de l'ajout de la vidéo à la playlist:", err);
     res.status(500).json({
       success: false,
-      message: "Une erreur est survenue lors de l'ajout de la vidéo à la playlist"
+      message: "Une erreur est survenue lors de l'ajout de la vidéo à la playlist",
+      error: err.message
     });
   }
 };
@@ -307,8 +404,9 @@ exports.addVideoToPlaylist = async (req, res) => {
  */
 exports.removeVideoFromPlaylist = async (req, res) => {
   try {
+    console.log("removeVideoFromPlaylist - Playlist:", req.params.id, "Vidéo:", req.params.videoId);
     const { id: playlistId, videoId } = req.params;
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.id;
 
     // Vérifier que la playlist existe et appartient à l'utilisateur
     const playlist = await Playlist.findOne({
@@ -320,6 +418,7 @@ exports.removeVideoFromPlaylist = async (req, res) => {
     });
 
     if (!playlist) {
+      console.log("Playlist non trouvée ou permissions insuffisantes");
       return res.status(404).json({
         success: false,
         message: "Playlist non trouvée ou permissions insuffisantes"
@@ -329,6 +428,7 @@ exports.removeVideoFromPlaylist = async (req, res) => {
     // Vérifier que la vidéo est dans la playlist
     const videoIndex = playlist.videos.findIndex(v => v.video_id.equals(videoId));
     if (videoIndex === -1) {
+      console.log("Vidéo non trouvée dans la playlist");
       return res.status(404).json({
         success: false,
         message: "Vidéo non trouvée dans la playlist"
@@ -344,27 +444,39 @@ exports.removeVideoFromPlaylist = async (req, res) => {
     });
 
     // Mettre à jour les métadonnées de la vidéo
-    await Video.findByIdAndUpdate(videoId, {
-      $pull: { 'meta.playlists': playlistId }
-    });
+    try {
+      await Video.findByIdAndUpdate(videoId, {
+        $pull: { 'meta.playlists': playlistId }
+      });
+      console.log("Métadonnées de la vidéo mises à jour");
+    } catch (metaErr) {
+      console.error("Erreur lors de la mise à jour des métadonnées de la vidéo:", metaErr);
+      // Continue sans bloquer
+    }
 
     // Sauvegarder les modifications
     await playlist.save();
+    console.log("Vidéo supprimée de la playlist avec succès");
 
     // Journal d'action
-    await LogAction.create({
-      type_action: "VIDEO_SUPPRIMEE_PLAYLIST",
-      description_action: `Vidéo supprimée de la playlist "${playlist.nom}"`,
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        playlist_id: playlistId,
-        playlist_nom: playlist.nom,
-        video_id: videoId
-      }
-    });
+    try {
+      await LogAction.create({
+        type_action: "VIDEO_SUPPRIMEE_PLAYLIST",
+        description_action: `Vidéo supprimée de la playlist "${playlist.nom}"`,
+        id_user: userId,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        created_by: userId,
+        donnees_supplementaires: {
+          playlist_id: playlistId,
+          playlist_nom: playlist.nom,
+          video_id: videoId
+        }
+      });
+    } catch (logErr) {
+      console.error("Erreur lors de la journalisation:", logErr);
+      // Continue sans bloquer
+    }
 
     res.status(200).json({
       success: true,
@@ -374,7 +486,8 @@ exports.removeVideoFromPlaylist = async (req, res) => {
     console.error("Erreur lors de la suppression de la vidéo de la playlist:", err);
     res.status(500).json({
       success: false,
-      message: "Une erreur est survenue lors de la suppression de la vidéo de la playlist"
+      message: "Une erreur est survenue lors de la suppression de la vidéo de la playlist",
+      error: err.message
     });
   }
 };
@@ -386,169 +499,96 @@ exports.removeVideoFromPlaylist = async (req, res) => {
  */
 exports.updatePlaylist = async (req, res) => {
   try {
+    console.log("updatePlaylist - ID:", req.params.id);
+    console.log("Données reçues:", req.body);
+    
     const { id } = req.params;
-    const { nom, description, visibilite } = req.body;
-    const userId = req.user._id;
-
-    // Vérifier que la playlist existe et appartient à l'utilisateur
-    const playlist = await Playlist.findOne({
-      _id: id,
-      proprietaire: userId
-    });
-
-    if (!playlist) {
-      return res.status(404).json({
-        success: false,
-        message: "Playlist non trouvée ou permissions insuffisantes"
-      });
-    }
-
-    // Mettre à jour les champs
-    if (nom) playlist.nom = nom;
-    if (description !== undefined) playlist.description = description;
-    if (visibilite) playlist.visibilite = visibilite;
-
-    playlist.modified_date = Date.now();
-    playlist.modified_by = userId;
-
-    await playlist.save();
-
-    // Journal d'action
-    await LogAction.create({
-      type_action: "PLAYLIST_MODIFIEE",
-      description_action: `Playlist "${playlist.nom}" modifiée`,
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        playlist_id: id,
-        playlist_nom: playlist.nom
-      }
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Playlist mise à jour avec succès",
-      data: playlist
-    });
-  } catch (err) {
-    console.error("Erreur lors de la mise à jour de la playlist:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la mise à jour de la playlist"
-    });
-  }
-};
-
-/**
- * @desc    Supprimer une playlist
- * @route   DELETE /api/playlists/:id
- * @access  Private
- */
-exports.deletePlaylist = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user._id;
-
-    // Vérifier que la playlist existe et appartient à l'utilisateur
-    const playlist = await Playlist.findOne({
-      _id: id,
-      proprietaire: userId
-    });
-
-    if (!playlist) {
-      return res.status(404).json({
-        success: false,
-        message: "Playlist non trouvée ou permissions insuffisantes"
-      });
-    }
-
-    // Récupérer la liste des vidéos de la playlist
-    const videoIds = playlist.videos.map(v => v.video_id);
-
-    // Supprimer les références à cette playlist dans les métadonnées des vidéos
-    await Video.updateMany(
-      { _id: { $in: videoIds } },
-      { $pull: { 'meta.playlists': id } }
-    );
-
-    // Supprimer la playlist
-    await playlist.deleteOne();
-
-    // Journal d'action
-    await LogAction.create({
-      type_action: "PLAYLIST_SUPPRIMEE",
-      description_action: `Playlist "${playlist.nom}" supprimée`,
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        playlist_id: id,
-        playlist_nom: playlist.nom
-      }
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Playlist supprimée avec succès"
-    });
-  } catch (err) {
-    console.error("Erreur lors de la suppression de la playlist:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la suppression de la playlist"
-    });
-  }
-};
-
-/**
- * @desc    Ajouter/supprimer une playlist aux favoris
- * @route   POST /api/playlists/:id/favorite
- * @access  Private
- */
-exports.toggleFavorite = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user._id;
-
-    // Vérifier que la playlist existe
+    const { nom, description, visibilite, videos, image_couverture } = req.body;
+    const userId = req.user._id || req.user.id;
+    
+    // Recherche de la playlist avec vérification souple du propriétaire
     const playlist = await Playlist.findById(id);
-
+    
     if (!playlist) {
+      console.log("Playlist non trouvée");
       return res.status(404).json({
         success: false,
         message: "Playlist non trouvée"
       });
     }
-
-    // Vérifier si la playlist est déjà en favori
-    const isFavorite = playlist.favori_par.some(favId => favId.equals(userId));
-
-    if (isFavorite) {
-      // Supprimer des favoris
-      playlist.favori_par = playlist.favori_par.filter(favId => !favId.equals(userId));
-      playlist.nb_favoris = Math.max(0, playlist.nb_favoris - 1);
-
-      await playlist.save();
-
-      return res.status(200).json({
-        success: true,
-        message: "Playlist retirée des favoris",
-        isFavorite: false
+    
+    // Vérifier que l'utilisateur est le propriétaire
+    const ownerId = playlist.proprietaire._id || playlist.proprietaire;
+    if (ownerId.toString() !== userId.toString()) {
+      console.log("Utilisateur non autorisé à modifier cette playlist");
+      return res.status(403).json({
+        success: false,
+        message: "Vous n'êtes pas autorisé à modifier cette playlist"
       });
-    } else {
-      // Ajouter aux favoris
-      playlist.favori_par.push(userId);
-      playlist.nb_favoris += 1;
-
-      await playlist.save();
-
-      // Journal d'action
+    }
+    
+    // Mettre à jour les champs
+    if (nom) playlist.nom = nom;
+    if (description !== undefined) playlist.description = description;
+    if (visibilite) playlist.visibilite = visibilite;
+    if (image_couverture !== undefined) playlist.image_couverture = image_couverture;
+    
+    // Mettre à jour la liste des vidéos si fournie
+    if (videos && Array.isArray(videos)) {
+      console.log("Mise à jour des vidéos de la playlist:", videos);
+      
+      // Récupérer les IDs des vidéos (plusieurs formats possibles)
+      const videoIds = videos.map(v => {
+        if (typeof v === 'object' && v !== null) {
+          return v.videoId || v._id;
+        }
+        return v;
+      });
+      
+      console.log("IDs des vidéos extraits:", videoIds);
+      
+      // Vérifier que toutes les vidéos existent
+      const existingVideos = await Video.find({ _id: { $in: videoIds } });
+      console.log(`Vidéos trouvées: ${existingVideos.length}/${videoIds.length}`);
+      
+      // Effacer les vidéos actuelles
+      playlist.videos = [];
+      
+      // Ajouter les nouvelles vidéos avec l'ordre
+      existingVideos.forEach((video, index) => {
+        // Trouver l'ordre spécifié ou utiliser l'index
+        const videoItem = videos.find(v => {
+          if (typeof v === 'object' && v !== null) {
+            const videoId = v.videoId || v._id;
+            return videoId && videoId.toString() === video._id.toString();
+          }
+          return v && v.toString() === video._id.toString();
+        });
+        
+        const ordre = (videoItem && typeof videoItem === 'object' && videoItem.ordre) 
+                    ? videoItem.ordre 
+                    : index + 1;
+        
+        playlist.videos.push({
+          video_id: video._id,
+          ordre: ordre,
+          date_ajout: new Date(),
+          ajoute_par: userId
+        });
+      });
+    }
+    
+    playlist.modified_date = Date.now();
+    playlist.modified_by = userId;
+    
+    await playlist.save();
+    console.log("Playlist mise à jour avec succès");
+    
+    // Journal d'action
+    try {
       await LogAction.create({
-        type_action: "PLAYLIST_FAVORIS",
-        description_action: `Playlist "${playlist.nom}" ajoutée aux favoris`,
+        type_action: "PLAYLIST_MODIFIEE",
+        description_action: `Playlist "${playlist.nom}" modifiée`,
         id_user: userId,
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
@@ -558,53 +598,22 @@ exports.toggleFavorite = async (req, res) => {
           playlist_nom: playlist.nom
         }
       });
-
-      return res.status(200).json({
-        success: true,
-        message: "Playlist ajoutée aux favoris",
-        isFavorite: true
-      });
+    } catch (logErr) {
+      console.error("Erreur lors de la journalisation:", logErr);
+      // Continue sans bloquer
     }
-  } catch (err) {
-    console.error("Erreur lors de la gestion des favoris:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la gestion des favoris"
-    });
-  }
-};
-
-/**
- * @desc    Récupérer les playlists populaires
- * @route   GET /api/playlists/popular
- * @access  Public
- */
-exports.getPopularPlaylists = async (req, res) => {
-  try {
-    const { limit = 5 } = req.query;
-
-    const playlists = await Playlist.find({ visibilite: 'PUBLIC' })
-      .sort({ nb_lectures: -1, nb_favoris: -1 })
-      .limit(parseInt(limit))
-      .populate('proprietaire', 'nom prenom photo_profil')
-      .select('nom description visibilite videos nb_lectures nb_favoris creation_date');
-
-    // Compter le nombre de vidéos pour chaque playlist
-    const playlistsWithCounts = playlists.map(playlist => {
-      const playlistObj = playlist.toObject();
-      playlistObj.nb_videos = playlist.videos ? playlist.videos.length : 0;
-      return playlistObj;
-    });
-
+    
     res.status(200).json({
       success: true,
-      data: playlistsWithCounts
+      message: "Playlist mise à jour avec succès",
+      data: playlist
     });
   } catch (err) {
-    console.error("Erreur lors de la récupération des playlists populaires:", err);
+    console.error("Erreur lors de la mise à jour de la playlist:", err);
     res.status(500).json({
       success: false,
-      message: "Une erreur est survenue lors de la récupération des playlists populaires"
+      message: "Une erreur est survenue lors de la mise à jour de la playlist",
+      error: err.message
     });
   }
 };
@@ -616,17 +625,20 @@ exports.getPopularPlaylists = async (req, res) => {
  */
 exports.reorderPlaylist = async (req, res) => {
   try {
+    console.log("reorderPlaylist - ID:", req.params.id);
+    console.log("Données reçues:", req.body);
+    
     const { id: playlistId } = req.params;
-    const { videoOrders } = req.body; // format: [{videoId: '123', ordre: 1}, ...]
-    const userId = req.user._id;
-
+    const { videoOrders } = req.body;
+    const userId = req.user._id || req.user.id;
+    
     if (!videoOrders || !Array.isArray(videoOrders)) {
       return res.status(400).json({
         success: false,
         message: "Format de données invalide pour la réorganisation"
       });
     }
-
+    
     // Vérifier que la playlist existe et appartient à l'utilisateur
     const playlist = await Playlist.findOne({
       _id: playlistId,
@@ -635,14 +647,15 @@ exports.reorderPlaylist = async (req, res) => {
         { 'collaborateurs.utilisateur': userId, 'collaborateurs.permissions': { $in: ['MODIFICATION'] } }
       ]
     });
-
+    
     if (!playlist) {
+      console.log("Playlist non trouvée ou permissions insuffisantes");
       return res.status(404).json({
         success: false,
         message: "Playlist non trouvée ou permissions insuffisantes"
       });
     }
-
+    
     // Mettre à jour l'ordre des vidéos
     videoOrders.forEach(item => {
       const video = playlist.videos.find(v => v.video_id.toString() === item.videoId);
@@ -650,12 +663,13 @@ exports.reorderPlaylist = async (req, res) => {
         video.ordre = item.ordre;
       }
     });
-
+    
     playlist.modified_date = Date.now();
     playlist.modified_by = userId;
-
+    
     await playlist.save();
-
+    console.log("Ordre des vidéos mis à jour avec succès");
+    
     res.status(200).json({
       success: true,
       message: "Ordre des vidéos mis à jour avec succès"
@@ -664,68 +678,93 @@ exports.reorderPlaylist = async (req, res) => {
     console.error("Erreur lors de la réorganisation de la playlist:", err);
     res.status(500).json({
       success: false,
-      message: "Une erreur est survenue lors de la réorganisation de la playlist"
+      message: "Une erreur est survenue lors de la réorganisation de la playlist",
+      error: err.message
     });
   }
 };
 
 /**
- * @desc    Partager une playlist
- * @route   POST /api/playlists/:id/share
+ * @desc    Ajouter/supprimer une playlist aux favoris
+ * @route   POST /api/playlists/:id/favorite
  * @access  Private
  */
-exports.sharePlaylist = async (req, res) => {
+exports.toggleFavorite = async (req, res) => {
   try {
-    const { id: playlistId } = req.params;
-    const { destinataires, message } = req.body;
-    const userId = req.user._id;
-
+    console.log("toggleFavorite - ID:", req.params.id);
+    const { id } = req.params;
+    const userId = req.user._id || req.user.id;
+    
     // Vérifier que la playlist existe
-    const playlist = await Playlist.findById(playlistId);
-
+    const playlist = await Playlist.findById(id);
+    
     if (!playlist) {
+      console.log("Playlist non trouvée");
       return res.status(404).json({
         success: false,
         message: "Playlist non trouvée"
       });
     }
-
-    // Vérifier que l'utilisateur a le droit de partager cette playlist
-    if (playlist.visibilite === 'PRIVE' && !playlist.proprietaire.equals(userId)) {
-      return res.status(403).json({
-        success: false,
-        message: "Vous n'avez pas l'autorisation de partager cette playlist"
+    
+    // Vérifier si la playlist est déjà en favori
+    const isFavorite = playlist.favori_par && 
+                        playlist.favori_par.some(favId => favId.toString() === userId.toString());
+    
+    if (isFavorite) {
+      // Supprimer des favoris
+      playlist.favori_par = playlist.favori_par.filter(favId => favId.toString() !== userId.toString());
+      playlist.nb_favoris = Math.max(0, playlist.nb_favoris - 1);
+      
+      await playlist.save();
+      console.log("Playlist retirée des favoris");
+      
+      return res.status(200).json({
+        success: true,
+        message: "Playlist retirée des favoris",
+        isFavorite: false
+      });
+    } else {
+      // Ajouter aux favoris
+      if (!playlist.favori_par) {
+        playlist.favori_par = [];
+      }
+      playlist.favori_par.push(userId);
+      playlist.nb_favoris += 1;
+      
+      await playlist.save();
+      console.log("Playlist ajoutée aux favoris");
+      
+      // Journal d'action
+      try {
+        await LogAction.create({
+          type_action: "PLAYLIST_FAVORIS",
+          description_action: `Playlist "${playlist.nom}" ajoutée aux favoris`,
+          id_user: userId,
+          ip_address: req.ip,
+          user_agent: req.headers['user-agent'],
+          created_by: userId,
+          donnees_supplementaires: {
+            playlist_id: id,
+            playlist_nom: playlist.nom
+          }
+        });
+      } catch (logErr) {
+        console.error("Erreur lors de la journalisation:", logErr);
+        // Continue sans bloquer
+      }
+      
+      return res.status(200).json({
+        success: true,
+        message: "Playlist ajoutée aux favoris",
+        isFavorite: true
       });
     }
-
-    // TODO: Implémenter la logique d'envoi de notification ou email aux destinataires
-    
-    // Pour l'instant, juste enregistrer l'action de partage
-    await LogAction.create({
-      type_action: "PLAYLIST_PARTAGEE",
-      description_action: `Playlist "${playlist.nom}" partagée`,
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        playlist_id: playlistId,
-        playlist_nom: playlist.nom,
-        destinataires,
-        message
-      }
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Playlist partagée avec succès",
-      shareUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/playlists/${playlistId}`
-    });
   } catch (err) {
-    console.error("Erreur lors du partage de la playlist:", err);
+    console.error("Erreur lors de la gestion des favoris:", err);
     res.status(500).json({
       success: false,
-      message: "Une erreur est survenue lors du partage de la playlist"
+      message: "Une erreur est survenue lors de la gestion des favoris",
+      error: err.message
     });
   }
 };
