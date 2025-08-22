@@ -816,3 +816,52 @@ exports.sharePlaylist = async (req, res) => {
     res.status(500).json({ success: false, message: 'Erreur partage playlist', error: err.message });
   }
 };
+
+/**
+ * @desc    Incrémenter le nombre de vues d'une playlist
+ * @route   POST /api/playlists/:id/view
+ * @access  Public
+ */
+exports.incrementPlaylistViews = async (req, res) => {
+  try {
+    console.log("incrementPlaylistViews - ID:", req.params.id);
+    const { id } = req.params;
+    
+    // Vérifier que la playlist existe
+    const playlist = await Playlist.findById(id);
+    
+    if (!playlist) {
+      console.log("Playlist non trouvée");
+      return res.status(404).json({
+        success: false,
+        message: "Playlist non trouvée"
+      });
+    }
+    
+    // Incrémenter le compteur de vues
+    playlist.nb_lectures = (playlist.nb_lectures || 0) + 1;
+    
+    await playlist.save();
+    console.log("Nombre de vues incrémenté:", playlist.nb_lectures);
+    
+    res.status(200).json({
+      success: true,
+      message: "Nombre de vues incrémenté avec succès",
+      nb_lectures: playlist.nb_lectures
+    });
+  } catch (err) {
+    console.error("Erreur lors de l'incrémentation des vues:", err);
+    res.status(500).json({
+      success: false,
+      message: "Une erreur est survenue lors de l'incrémentation des vues",
+      error: err.message
+    });
+  }
+};
+
+/**
+ * @desc    Ajouter/supprimer un like à une playlist (alias de toggleFavorite)
+ * @route   POST /api/playlists/:id/like
+ * @access  Private
+ */
+exports.toggleLike = exports.toggleFavorite;

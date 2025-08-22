@@ -73,6 +73,12 @@ router.post('/:id/favorite', protect, playlistController.toggleFavorite);
 // Partage (si tu as une implémentation dans le contrôleur)
 router.post('/:id/share', protect, playlistController.sharePlaylist);
 
+// Incrémenter le nombre de vues
+router.post('/:id/view', playlistController.incrementPlaylistViews);
+
+// Route supplémentaire pour les likes (alias de favorite)
+router.post('/:id/like', protect, playlistController.toggleLike);
+
 // Gérer les vidéos d’une playlist
 router.post('/:id/videos', protect, playlistController.addVideoToPlaylist);
 router.delete('/:id/videos/:videoId', protect, playlistController.removeVideoFromPlaylist);
