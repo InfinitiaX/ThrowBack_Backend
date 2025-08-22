@@ -1,238 +1,134 @@
 // controllers/userLiveStreamController.js
 const LiveStream = require('../models/LiveStream');
-const LogAction = require('../models/LogAction');
-const mongoose = require('mongoose');
+const LogAction  = require('../models/LogAction');
+const mongoose   = require('mongoose');
 
-// Niveau de log configurable
 const LOG_LEVEL = process.env.NODE_ENV === 'development' ? 'debug' : 'error';
-
-// Fonction de log personnalisée
 const logger = {
-  debug: (...args) => LOG_LEVEL === 'debug' && console.log(...args),
-  info: (...args) => ['debug', 'info'].includes(LOG_LEVEL) && console.log(...args),
-  warn: (...args) => console.warn(...args),
-  error: (...args) => console.error(...args)
+  debug: (...a) => LOG_LEVEL === 'debug' && console.log(...a),
+  info:  (...a) => ['debug','info'].includes(LOG_LEVEL) && console.log(...a),
+  warn:  (...a) => console.warn(...a),
+  error: (...a) => console.error(...a),
 };
 
-/**
- * Fonction utilitaire pour mettre à jour automatiquement les statuts
- */
+const GRACE_SECONDS = parseInt(process.env.LIVETHROWBACK_END_GRACE_SECONDS || '120', 10);
+const FORCE_END_AFTER_MIN = parseInt(process.env.LIVETHROWBACK_FORCE_END_AFTER_MIN || '60', 10);
+
+/** Met à jour automatiquement les statuts (start/stop) de manière non agressive */
 const updateStreamStatuses = async () => {
   const now = new Date();
-  
+  const cutoff = new Date(now.getTime() - GRACE_SECONDS * 1000);
+  let started = 0;
+  let ended   = 0;
+
   try {
-    // Démarrer automatiquement les streams programmés dont l'heure est arrivée
-    const streamsToStart = await LiveStream.updateMany(
+    // Démarrer les SCHEDULED arrivés à échéance
+    const startRes = await LiveStream.updateMany(
       {
         status: 'SCHEDULED',
         scheduledStartTime: { $lte: now },
         scheduledEndTime: { $gt: now }
       },
       {
-        $set: {
-          status: 'LIVE',
-          actualStartTime: now
-        }
+        $set: { status: 'LIVE', actualStartTime: now }
       }
     );
+    started = startRes.modifiedCount || 0;
+    if (started > 0) logger.info(`Auto-started ${started} scheduled streams`);
 
-    if (streamsToStart.modifiedCount > 0) {
-      logger.info(`Auto-started ${streamsToStart.modifiedCount} scheduled streams`);
-    }
+    // Terminer les LIVE dépassés de la "grace", sauf si loop=true,
+    // à moins d’avoir largement dépassé l’heure de fin.
+    const candidates = await LiveStream.find({
+      status: 'LIVE',
+      scheduledEndTime: { $lte: cutoff }
+    });
 
-    // Terminer automatiquement les streams dont l'heure de fin est dépassée
-    const streamsToEnd = await LiveStream.updateMany(
-      {
-        status: 'LIVE',
-        scheduledEndTime: { $lte: now }
-      },
-      {
-        $set: {
-          status: 'COMPLETED',
-          actualEndTime: now
-        }
+    for (const stream of candidates) {
+      const loopEnabled = stream?.playbackConfig?.loop === true;
+      const overshootMs = now - new Date(stream.scheduledEndTime);
+      const mustForceEnd = overshootMs >= FORCE_END_AFTER_MIN * 60 * 1000;
+
+      if (loopEnabled && !mustForceEnd) {
+        logger.debug(`Keeping LIVE (loop=true) "${stream.title}" (${stream._id})`);
+        continue;
       }
-    );
 
-    if (streamsToEnd.modifiedCount > 0) {
-      logger.info(`Auto-ended ${streamsToEnd.modifiedCount} expired streams`);
+      stream.status = 'COMPLETED';
+      stream.actualEndTime = now;
+      await stream.save();
+      ended++;
     }
-    
-    return {
-      started: streamsToStart.modifiedCount,
-      ended: streamsToEnd.modifiedCount
-    };
-  } catch (error) {
-    logger.error('Error updating stream statuses:', error);
-    return { started: 0, ended: 0 };
+
+    if (ended > 0) logger.info(`Auto-ended ${ended} streams`);
+
+    return { started, ended };
+  } catch (err) {
+    logger.error('Error updating stream statuses:', err);
+    return { started, ended };
   }
 };
 
-/**
- * Fonction pour gérer la progression des compilations vidéo
- */
+/** Prog. compilations – gardée (ne change pas le src côté front) */
 const updateCompilationProgress = async (streamId) => {
   try {
     const stream = await LiveStream.findById(streamId);
     if (!stream || stream.compilationType !== 'VIDEO_COLLECTION') return null;
 
-    const videos = stream.compilationVideos;
-    if (!videos || videos.length === 0) return null;
+    const videos = stream.compilationVideos || [];
+    if (videos.length === 0) return null;
 
-    const now = new Date();
+    // On ne pousse plus d'updates fréquents côté front : l’index serveur
+    // reste informatif mais n’entraîne pas de changement de src côté client.
     const startTime = stream.actualStartTime || stream.scheduledStartTime;
-    const elapsedMinutes = Math.floor((now - startTime) / (1000 * 60));
+    const elapsedMinutes = Math.floor((Date.now() - new Date(startTime)) / 60000);
 
-    // Si une seule vidéo, elle tourne en boucle
-    if (videos.length === 1) {
-      stream.currentVideoIndex = 0;
-    } else {
-      // Plusieurs vidéos : calculer l'index basé sur la durée écoulée
-      // Supposons 4 minutes par vidéo en moyenne
-      const avgVideoDuration = 4; // minutes
-      const newIndex = Math.floor(elapsedMinutes / avgVideoDuration) % videos.length;
-      stream.currentVideoIndex = newIndex;
-    }
+    stream.currentVideoIndex =
+      videos.length === 1 ? 0 : (Math.floor(elapsedMinutes / 4) % videos.length);
 
     await stream.save();
-    logger.debug(`Updated compilation progress for stream ${streamId}, video index: ${stream.currentVideoIndex}`);
+    logger.debug(`Updated compilation index ${stream.currentVideoIndex} for ${streamId}`);
     return stream;
-  } catch (error) {
-    logger.error('Error updating compilation progress:', error);
+  } catch (err) {
+    logger.error('Error updating compilation progress:', err);
     return null;
   }
 };
 
-/**
- * @desc    Récupérer tous les livestreams actifs pour les utilisateurs
- * @route   GET /api/user/livestreams
- * @access  Public
- */
 exports.getActiveLiveStreams = async (req, res) => {
   try {
-    logger.debug('Fetching active livestreams for users');
-    
-    // D'abord, mettre à jour automatiquement les statuts
     await updateStreamStatuses();
-    
     const now = new Date();
-    
-    // Filtre strict : SEULEMENT les streams LIVE qui ne sont pas expirés
-    const baseFilter = { 
+
+    const baseFilter = {
       status: 'LIVE',
-      scheduledEndTime: { $gt: now }, // S'assurer que la date de fin n'est pas dépassée
-      $or: [
-        { actualStartTime: { $lte: now } }, // Déjà commencé
-        { scheduledStartTime: { $lte: now } } // L'heure de début est arrivée
-      ]
+      scheduledEndTime: { $gt: now },
+      $or: [{ actualStartTime: { $lte: now } }, { scheduledStartTime: { $lte: now } }]
     };
-    
-    // Ajouter la condition de visibilité selon l'authentification
+
     let filter = { ...baseFilter };
-    
     if (req.user) {
       filter = {
         ...baseFilter,
         $and: [
           baseFilter,
-          {
-            $or: [
-              { isPublic: true },
-              { author: req.user.id }
-            ]
-          }
+          { $or: [{ isPublic: true }, { author: req.user.id }] }
         ]
       };
     } else {
       filter.isPublic = true;
     }
-    
-    logger.debug('Using filter:', JSON.stringify(filter));
-    
+
     const livestreams = await LiveStream.find(filter)
       .populate('author', 'nom prenom photo_profil')
       .sort('-actualStartTime -scheduledStartTime');
 
-    // Mettre à jour la progression des compilations pour chaque stream
-    for (const stream of livestreams) {
-      if (stream.compilationType === 'VIDEO_COLLECTION') {
-        await updateCompilationProgress(stream._id);
+    for (const s of livestreams) {
+      if (s.compilationType === 'VIDEO_COLLECTION') {
+        await updateCompilationProgress(s._id);
       }
     }
 
-    logger.debug(`Found ${livestreams.length} active livestreams`);
-    
-    // Données de test seulement si aucun stream actif ET en développement
-    if (livestreams.length === 0 && process.env.NODE_ENV === 'development') {
-      logger.debug('Returning test livestream data for development');
-      const testStream = {
-        _id: new mongoose.Types.ObjectId(),
-        title: "Compilation rap français des années 90",
-        description: "Les meilleurs titres du rap français des années 90",
-        status: "LIVE",
-        isPublic: true,
-        compilationType: "VIDEO_COLLECTION",
-        playbackUrl: "https://www.youtube.com/embed/playlist?list=PLjT3XS2hb44UYOmOS9tXLvGzg60TMnqGQ&autoplay=1&loop=1",
-        thumbnailUrl: "/images/livestreams/rap-francais.jpg",
-        hostName: "ThrowBack Host",
-        tags: ["rap", "français", "90s", "nostalgie"],
-        chatEnabled: true,
-        scheduledStartTime: new Date(Date.now() - 60000), // Commencé il y a 1 minute
-        scheduledEndTime: new Date(Date.now() + 3600000), // Se termine dans 1 heure
-        actualStartTime: new Date(Date.now() - 60000),
-        currentVideoIndex: 0,
-        playbackConfig: {
-          loop: true,
-          autoplay: true,
-          shuffle: false
-        },
-        statistics: {
-          totalUniqueViewers: 127,
-          likes: 42
-        },
-        author: {
-          _id: new mongoose.Types.ObjectId(),
-          nom: "Throwback",
-          prenom: "Host"
-        },
-        compilationVideos: [
-          {
-            sourceId: "v_Uy0NpRqBOI",
-            sourceType: "YOUTUBE",
-            title: "IAM - Je danse le Mia",
-            thumbnailUrl: "/images/thumbnails/iam-mia.jpg"
-          },
-          {
-            sourceId: "aDTwIu-pTJQ",
-            sourceType: "YOUTUBE", 
-            title: "Suprême NTM - C'est arrivé près d'chez toi",
-            thumbnailUrl: "/images/thumbnails/ntm-arrivé.jpg"
-          }
-        ]
-      };
-      
-      return res.status(200).json({
-        success: true,
-        count: 1,
-        data: [testStream]
-      });
-    }
-
-    // Journaliser l'action si l'utilisateur est connecté
-    if (req.user) {
-      try {
-        await LogAction.create({
-          type_action: 'VIEW_LIVESTREAMS',
-          description_action: 'Utilisateur a consulté les livestreams actifs',
-          id_user: req.user.id,
-          created_by: req.user.id
-        });
-      } catch (error) {
-        logger.error('Error logging action:', error);
-        // Continue même si le logging échoue
-      }
-    }
-
+    // pas de slicing côté back => toutes les vidéos de la compilation restent dans payload
     res.status(200).json({
       success: true,
       count: livestreams.length,
@@ -240,265 +136,110 @@ exports.getActiveLiveStreams = async (req, res) => {
     });
   } catch (error) {
     logger.error('Error fetching livestreams for users:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Une erreur est survenue lors de la récupération des livestreams',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Erreur lors de la récupération des livestreams' });
   }
 };
 
-/**
- * @desc    Récupérer un livestream spécifique par ID
- * @route   GET /api/user/livestreams/:id
- * @access  Public
- */
 exports.getLiveStreamById = async (req, res) => {
   try {
-    const streamId = req.params.id;
-    logger.debug(`Fetching livestream with ID: ${streamId}`);
-    
-    // Mettre à jour les statuts avant de récupérer le stream
     await updateStreamStatuses();
-    
+    const streamId = req.params.id;
+
     const livestream = await LiveStream.findById(streamId)
       .populate('author', 'nom prenom photo_profil');
-    
+
     if (!livestream) {
-      return res.status(404).json({
-        success: false,
-        message: 'Livestream non trouvé'
-      });
+      return res.status(404).json({ success: false, message: 'Livestream non trouvé' });
     }
 
-    // Vérifier si le livestream est public ou appartient à l'utilisateur connecté
+    // Public/owner check
     if (!livestream.isPublic && (!req.user || req.user.id !== livestream.author._id.toString())) {
-      return res.status(403).json({
-        success: false,
-        message: 'Ce livestream n\'est pas public'
-      });
+      return res.status(403).json({ success: false, message: 'Ce livestream n’est pas public' });
     }
 
-    const now = new Date();
-    
-    // Vérifications strictes pour déterminer si le stream est accessible
-    const isExpired = livestream.scheduledEndTime && livestream.scheduledEndTime <= now;
-    const isNotStarted = livestream.scheduledStartTime && livestream.scheduledStartTime > now;
-    const isCompleted = livestream.status === 'COMPLETED';
-    const isCancelled = livestream.status === 'CANCELLED';
-
-    // En production, vérifier que le livestream est réellement actif
-    if (process.env.NODE_ENV !== 'development') {
-      if (isExpired || isCompleted || isCancelled) {
-        return res.status(400).json({
-          success: false,
-          message: 'Ce livestream n\'est plus disponible'
-        });
-      }
-      
-      if (isNotStarted && livestream.status === 'SCHEDULED') {
-        const minutesUntilStart = Math.ceil((livestream.scheduledStartTime - now) / (1000 * 60));
-        return res.status(400).json({
-          success: false,
-          message: `Ce livestream commencera dans ${minutesUntilStart} minutes`
-        });
-      }
-      
-      if (livestream.status !== 'LIVE') {
-        return res.status(400).json({
-          success: false,
-          message: 'Ce livestream n\'est pas actuellement en direct'
-        });
-      }
-    }
-
-    // Mettre à jour la progression si c'est une compilation
+    // Mise à jour de l’index serveur (n’affecte plus le src côté client)
     if (livestream.compilationType === 'VIDEO_COLLECTION') {
       await updateCompilationProgress(streamId);
-      // Recharger le stream avec les données mises à jour
-      const updatedStream = await LiveStream.findById(streamId)
-        .populate('author', 'nom prenom photo_profil');
-      
-      if (updatedStream) {
-        Object.assign(livestream, updatedStream.toObject());
-      }
     }
 
-    // Journaliser la vue et mettre à jour les statistiques
+    // Statistiques de vue
     if (req.user) {
       try {
         await LogAction.create({
           type_action: 'VIEW_LIVESTREAM',
-          description_action: `Utilisateur a consulté le livestream "${livestream.title}"`,
+          description_action: `User viewed "${livestream.title}"`,
           id_user: req.user.id,
           created_by: req.user.id
         });
-        
-        // Mettre à jour les statistiques de visionnage
-        await LiveStream.findByIdAndUpdate(streamId, {
-          $inc: {
-            'statistics.totalUniqueViewers': 1
-          }
-        });
-      } catch (error) {
-        logger.error('Error logging view action:', error);
-        // Continue même si le logging échoue
-      }
+        await LiveStream.findByIdAndUpdate(streamId, { $inc: { 'statistics.totalUniqueViewers': 1 } });
+      } catch (e) { logger.error(e); }
     }
 
-    res.status(200).json({
-      success: true,
-      data: livestream
-    });
+    res.status(200).json({ success: true, data: livestream });
   } catch (error) {
     logger.error('Error fetching livestream by ID:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Une erreur est survenue lors de la récupération du livestream',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Erreur lors de la récupération du livestream' });
   }
 };
 
-/**
- * @desc    Ajouter un like à un livestream
- * @route   POST /api/user/livestreams/:id/like
- * @access  Private
- */
 exports.likeLiveStream = async (req, res) => {
   try {
     const streamId = req.params.id;
-    const userId = req.user.id;
-    
-    // Vérifier si le livestream existe
     const livestream = await LiveStream.findById(streamId);
-    if (!livestream) {
-      return res.status(404).json({
-        success: false,
-        message: 'Livestream non trouvé'
-      });
-    }
+    if (!livestream) return res.status(404).json({ success: false, message: 'Livestream non trouvé' });
 
-    // Vérifier que le stream est encore actif
     const now = new Date();
-    const isExpired = livestream.scheduledEndTime && livestream.scheduledEndTime <= now;
-    const isNotLive = livestream.status !== 'LIVE';
-
-    if (isExpired || isNotLive) {
-      return res.status(400).json({
-        success: false,
-        message: 'Ce livestream n\'est plus actif'
-      });
+    if (livestream.status !== 'LIVE' || (livestream.scheduledEndTime && livestream.scheduledEndTime <= now)) {
+      return res.status(400).json({ success: false, message: 'Ce livestream n’est plus actif' });
     }
 
-    // Mettre à jour les statistiques de likes
-    await LiveStream.findByIdAndUpdate(streamId, {
-      $inc: { 'statistics.likes': 1 }
-    });
-
-    // Journaliser l'action
-    try {
-      await LogAction.create({
-        type_action: 'LIKE_LIVESTREAM',
-        description_action: `Utilisateur a aimé le livestream "${livestream.title}"`,
-        id_user: userId,
-        created_by: userId
-      });
-    } catch (error) {
-      logger.error('Error logging like action:', error);
-      // Continue même si le logging échoue
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Like ajouté avec succès'
-    });
+    await LiveStream.findByIdAndUpdate(streamId, { $inc: { 'statistics.likes': 1 } });
+    res.status(200).json({ success: true, message: 'Like ajouté' });
   } catch (error) {
-    logger.error('Error liking livestream:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Une erreur est survenue lors de l\'ajout du like',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Erreur lors du like' });
   }
 };
 
-/**
- * @desc    Ajouter un commentaire à un livestream
- * @route   POST /api/user/livestreams/:id/comment
- * @access  Private
- */
 exports.commentLiveStream = async (req, res) => {
   try {
-    // Rediriger vers liveChatController.addMessage
     const liveChatController = require('./liveChatController');
     return liveChatController.addMessage(req, res);
   } catch (error) {
-    logger.error('Error commenting livestream:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Une erreur est survenue lors de l\'ajout du commentaire',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Erreur lors de l’ajout du commentaire' });
   }
 };
 
-/**
- * @desc    Récupérer les commentaires d'un livestream
- * @route   GET /api/user/livestreams/:id/comments
- * @access  Public
- */
 exports.getLiveStreamComments = async (req, res) => {
   try {
-    // Rediriger vers liveChatController.getMessages
     const liveChatController = require('./liveChatController');
     return liveChatController.getMessages(req, res);
   } catch (error) {
-    logger.error('Error fetching livestream comments:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Une erreur est survenue lors de la récupération des commentaires',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Erreur lors de la récupération des commentaires' });
   }
 };
 
-/**
- * Middleware pour mettre à jour automatiquement les statuts des streams
- */
 const autoUpdateStreams = async (req, res, next) => {
-  try {
-    await updateStreamStatuses();
-    next();
-  } catch (error) {
-    logger.error('Error in auto-update middleware:', error);
-    next(); // Continuer même en cas d'erreur
-  }
+  try { await updateStreamStatuses(); } catch (e) { logger.error(e); }
+  next();
 };
 
-/**
- * Task périodique pour nettoyer automatiquement les statuts
- */
 const cleanupStreamStatuses = async () => {
   try {
     const result = await updateStreamStatuses();
-    
-    logger.info(`Cleanup completed: ${result.started} streams started, ${result.ended} streams ended`);
-    
+    logger.info(`Cleanup completed: started=${result.started}, ended=${result.ended}`);
     return result;
-  } catch (error) {
-    logger.error('Error in cleanup task:', error);
-    return { started: 0, ended: 0, error: error.message };
+  } catch (e) {
+    logger.error('Cleanup error:', e);
+    return { started: 0, ended: 0, error: e.message };
   }
 };
 
 module.exports = {
   getActiveLiveStreams: exports.getActiveLiveStreams,
-  getLiveStreamById: exports.getLiveStreamById,
-  likeLiveStream: exports.likeLiveStream,
-  commentLiveStream: exports.commentLiveStream,
-  getLiveStreamComments: exports.getLiveStreamComments,
- 
+  getLiveStreamById:    exports.getLiveStreamById,
+  likeLiveStream:       exports.likeLiveStream,
+  commentLiveStream:    exports.commentLiveStream,
+  getLiveStreamComments:exports.getLiveStreamComments,
   updateStreamStatuses,
   updateCompilationProgress,
   autoUpdateStreams,
