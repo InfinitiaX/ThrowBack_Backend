@@ -461,47 +461,34 @@ const verifyEmail = async (req, res) => {
  */
 const verifyPasswordReset = async (req, res) => {
   try {
-    console.log("🔍 Verify password reset token called");
     const { token } = req.params;
-    
-    // Log du token reçu
-    console.log("📝 Token received:", token);
-    
-    // Hash token to compare with stored one
+
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    console.log("🔒 Hashed token:", hashedToken);
-    
-    // Find user with this token
     const user = await User.findOne({
       password_reset_token: hashedToken,
       password_reset_expires: { $gt: Date.now() }
     });
-    
+
+    const base = (process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com')
+      .replace(/\/index\.html$/i, '')  // nettoie un éventuel /index.html
+      .replace(/\/$/, '');             // retire le / final
+
     if (!user) {
-      console.log("❌ Invalid or expired token");
-      const errorUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=invalid_token&message=Invalid or expired token`;
-      console.log("🔄 Redirecting to:", errorUrl);
-      return res.redirect(errorUrl);
+      const url = `${base}/forgot-password?error=invalid_token&message=${encodeURIComponent('Invalid or expired token')}`;
+      return res.redirect(url);
     }
-    
-    console.log("✅ Valid token for user:", user.email);
-    
-    // Construire l'URL de redirection
-    const redirectUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/reset-password?token=${token}&message=Valid token, you can now set your new password`;
-    
-    // Log de l'URL de redirection complète
-    console.log("🔄 Redirecting to reset password page:");
-    console.log("📍 Full URL:", redirectUrl);
-    
-    // Valid token, redirect to reset form
-    res.redirect(redirectUrl);
+
+    const url = `${base}/reset-password?token=${encodeURIComponent(token)}&message=${encodeURIComponent('Valid token, you can now set your new password')}`;
+    return res.redirect(url);
   } catch (error) {
-    console.error("❌ Password reset token verification error:", error);
-    const errorUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=server_error&message=An error occurred`;
-    console.log("🔄 Error redirect to:", errorUrl);
-    res.redirect(errorUrl);
+    const base = (process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com')
+      .replace(/\/index\.html$/i, '')
+      .replace(/\/$/, '');
+    const url = `${base}/forgot-password?error=server_error&message=${encodeURIComponent('An error occurred')}`;
+    return res.redirect(url);
   }
 };
+
 
 
 
