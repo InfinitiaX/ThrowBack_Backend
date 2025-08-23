@@ -291,70 +291,50 @@ const getMe = async (req, res) => {
  * @route   POST /api/auth/forgot-password
  * @access  Public
  */
+
 const forgotPassword = async (req, res) => {
   try {
     console.log(" Forgot password with CAPTCHA called");
     const { email, captchaId, captchaAnswer } = req.body;
 
-    // Vérification de base
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "Email is required"
-      });
-    }
-
+    if (!email) return res.status(400).json({ success: false, message: "Email is required" });
     if (!captchaId || !captchaAnswer) {
-      return res.status(400).json({
-        success: false,
-        message: "CAPTCHA verification is required"
-      });
+      return res.status(400).json({ success: false, message: "CAPTCHA verification is required" });
     }
 
-    // Vérifier le CAPTCHA
-    console.log(" Vérification du CAPTCHA...");
     const captchaResult = captchaGenerator.verifyCaptcha(captchaId, captchaAnswer);
-    
     if (!captchaResult.valid) {
-      console.log(" CAPTCHA invalide:", captchaResult.error);
-      return res.status(400).json({
-        success: false,
-        message: "Invalid CAPTCHA. Please try again.",
-        captchaError: true
-      });
+      return res.status(400).json({ success: false, message: "Invalid CAPTCHA. Please try again.", captchaError: true });
     }
 
-    console.log(" CAPTCHA vérifié avec succès");
-
-    // Check if user exists
     const user = await User.findOne({ email: email.toLowerCase() });
-    
-    // For security reasons, don't reveal if email exists
+
+    // Réponse standard même si l'email n'existe pas
     if (!user) {
-      // Même si l'utilisateur n'existe pas, on retourne un succès
-      // pour ne pas révéler l'existence ou non de l'email
       return res.status(200).json({
         success: true,
         message: "If this email is associated with an account, a reset link has been sent"
       });
     }
 
-    // Generate reset token
+    // Générer le token
     const resetToken = user.generatePasswordResetToken();
     await user.save();
 
-    // Create reset link pointing to API
-    const resetLink = `${process.env.BACKEND_URL || 'https://throwback-backend.onrender.com'}/api/auth/verify-reset/${resetToken}`;
-    
+    // ✅ Construire un lien DIRECT vers le front
+    const base = (process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com')
+      .replace(/\/index\.html$/i, '')
+      .replace(/\/$/, '');
+    const resetLink = `${base}/reset-password?token=${encodeURIComponent(resetToken)}&message=${encodeURIComponent('Valid token, you can now set your new password')}`;
+
     try {
-      // Send reset email
       await sendResetEmail(user.email, resetLink);
       console.log(" Reset email sent successfully");
     } catch (emailError) {
       console.error(" Password reset email error:", emailError);
+      // on n’échoue pas la requête pour autant
     }
 
-    // Log action
     await LogAction.create({
       type_action: "DEMANDE_REINITIALISATION_MDP",
       description_action: "Password reset requested (with CAPTCHA)",
@@ -362,21 +342,16 @@ const forgotPassword = async (req, res) => {
       ip_address: req.ip,
       user_agent: req.headers['user-agent'],
       created_by: "SYSTEM",
-      donnees_supplementaires: {
-        captcha_verified: true
-      }
+      donnees_supplementaires: { captcha_verified: true }
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "If this email is associated with an account, a reset link has been sent"
     });
   } catch (error) {
     console.error(" Password reset request error:", error);
-    res.status(500).json({
-      success: false,
-      message: "An error occurred during password reset request. Please try again."
-    });
+    return res.status(500).json({ success: false, message: "An error occurred during password reset request. Please try again." });
   }
 };
 
