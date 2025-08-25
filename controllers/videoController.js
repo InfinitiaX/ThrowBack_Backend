@@ -573,35 +573,26 @@ exports.updateVideo = async (req, res, next) => {
  * @route   DELETE /api/admin/videos/:id
  * @access  Private/Admin
  */
+
 exports.deleteVideo = async (req, res, next) => {
   try {
     const videoId = req.params.id;
     const userId = req.user._id || req.user.id;
-    
-    // Find video
+
+    // Check existence + droits
     const video = await Video.findById(videoId);
-    
     if (!video) {
-      return res.status(404).json({
-        success: false,
-        message: 'Video not found'
-      });
+      return res.status(404).json({ success: false, message: 'Video not found' });
     }
-    
-    // Check permissions for non-admin users
-    if (!isAdmin(req.user)) {
-      if (video.type !== 'short' || !video.auteur.equals(userId)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied'
-        });
-      }
+    if (!isAdmin(req.user) && (video.type !== 'short' || !video.auteur.equals(userId))) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
-    // Delete video
-    await video.deleteOne();
-    
-    // Log action
+
+    // Suppression directe
+    await Video.findByIdAndDelete(videoId);
+
+    // (facultatif) TODO: supprimer/soft-delete les commentaires liés, retirer des playlists, etc.
+
     await LogAction.create({
       type_action: 'DELETE_VIDEO',
       description_action: `Deleted video: ${video.titre} (${video.genre || 'No genre'})`,
@@ -610,16 +601,14 @@ exports.deleteVideo = async (req, res, next) => {
       user_agent: req.headers['user-agent'],
       created_by: userId
     });
-    
-    res.json({
-      success: true,
-      message: 'Video deleted successfully'
-    });
+
+    res.json({ success: true, message: 'Video deleted successfully' });
   } catch (err) {
     console.error('Error deleting video:', err);
     next(err);
   }
 };
+
 
 /**
  * @desc    List videos for admin
