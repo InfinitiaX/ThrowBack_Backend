@@ -4,33 +4,19 @@ const router = express.Router();
 const memoryController = require('../../controllers/memoryController');
 const { protect } = require('../../middlewares/authMiddleware');
 
-// Routes pour les souvenirs
-router.get('/:id/memories', memoryController.getVideoMemories);
-router.post('/:id/memories', protect, memoryController.addMemory);
-router.get('/memories/recent', memoryController.getRecentMemories);
-
-// Routes pour les interactions avec les souvenirs
-
-// Dans routes/api/memories.js
+// Liste générale (fallback/debug)
 router.get('/', memoryController.getAllMemories);
-router.post('/:memoryId/like', protect, memoryController.likeMemory);
 
-router.post('/memories/:id/like', protect, memoryController.likeMemory);
-router.post('/memories/:id/dislike', protect, memoryController.dislikeMemory);
-router.delete('/memories/:id', protect, memoryController.deleteMemory);
-// router.get('/memories/:id/replies', memoryController.getMemoryReplies);
-// router.post('/memories/:id/replies', protect, memoryController.addReply);
-// router.post('/memories/:id/report', protect, memoryController.reportMemory);
+// Interactions souvenirs (commentaire OU réponse = même modèle)
+router.post('/:id/like', protect, memoryController.likeMemory);
+router.post('/:id/dislike', protect, memoryController.dislikeMemory);
+router.delete('/:id', protect, memoryController.deleteMemory);
 
-// router.get('/:id/replies', memoryController.getMemoryReplies);
-// router.post('/:id/replies', protect, memoryController.addReply);
-// router.delete('/:id/replies/:replyId', protect, memoryController.deleteReply);
-
-
-// Routes pour les réponses aux souvenirs
+// Replies
 router.get('/:id/replies', memoryController.getMemoryReplies);
 router.post('/:id/replies', protect, memoryController.addReply);
 
-// Route pour le signalement
-router.post('/:id/report', protect, memoryController.reportMemory);
+// Signalement
+router.post('/:id/report', protect, memoryController.reportMemory); // si vous l’activez
+
 module.exports = router;

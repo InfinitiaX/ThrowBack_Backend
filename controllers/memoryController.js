@@ -6,1009 +6,434 @@ const LogAction = require('../models/LogAction');
 const mongoose = require('mongoose');
 
 /**
- * @desc    Récupérer les souvenirs (commentaires) d'une vidéo
- * @route   GET /api/videos/:id/memories
- * @access  Public
+ * GET /api/videos/:id/memories (et /api/public/videos/:id/memories)
+ * Commentaires de 1er niveau d’une vidéo (filtrage STRICT)
  */
 exports.getVideoMemories = async (req, res) => {
   try {
     const { id: videoId } = req.params;
     const { page = 1, limit = 10, sort = 'recent' } = req.query;
-    
-    // Vérifier que la vidéo existe
+
     const videoExists = await Video.exists({ _id: videoId });
     if (!videoExists) {
-      return res.status(404).json({
-        success: false,
-        message: "Vidéo non trouvée"
-      });
+      return res.status(404).json({ success: false, message: "Vidéo non trouvée" });
     }
-    
-    // Définir l'ordre de tri
+
     let sortOrder = {};
     switch (sort) {
-      case 'likes':
-        sortOrder = { likes: -1, creation_date: -1 };
-        break;
-      case 'oldest':
-        sortOrder = { creation_date: 1 };
-        break;
+      case 'likes':   sortOrder = { likes: -1, creation_date: -1 }; break;
+      case 'oldest':  sortOrder = { creation_date: 1 }; break;
       case 'recent':
-      default:
-        sortOrder = { creation_date: -1 };
-        break;
+      default:        sortOrder = { creation_date: -1 }; break;
     }
-    
-    // Calculer le nombre de documents à sauter pour la pagination
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
-    // Récupérer les commentaires de type "ACTIF" (non modérés, non supprimés)
-    const memories = await Comment.find({ 
-      video_id: videoId,
-      statut: 'ACTIF',
-      parent_comment: null // Uniquement les commentaires de premier niveau
-    })
-      .sort(sortOrder)
-      .skip(skip)
-      .limit(parseInt(limit))
-      .populate('auteur', 'nom prenom photo_profil');
-    
-    // Compter le nombre total de commentaires pour la pagination
-    const total = await Comment.countDocuments({
-      video_id: videoId,
-      statut: 'ACTIF',
-      parent_comment: null
-    });
-    
-    // Ajouter les informations d'interaction utilisateur si connecté
-    let memoriesWithInteraction = memories;
+
+    const baseFilter = { video_id: videoId, statut: 'ACTIF', parent_comment: null };
+
+    const [memories, total] = await Promise.all([
+      Comment.find(baseFilter)
+        .sort(sortOrder)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('auteur', 'nom prenom photo_profil'),
+      Comment.countDocuments(baseFilter)
+    ]);
+
+    // Interactions utilisateur
+    let withInteraction = memories;
     if (req.user) {
       const userId = req.user._id;
-      
-      // Map pour transformer les documents Mongoose en objets simples et ajouter les interactions
-      memoriesWithInteraction = memories.map(memory => {
-        const memoryObj = memory.toObject();
-        
-        // S'assurer que les tableaux existent
-        const likedBy = Array.isArray(memory.liked_by) ? memory.liked_by : [];
-        const dislikedBy = Array.isArray(memory.disliked_by) ? memory.disliked_by : [];
-        
-        // Vérifier si l'utilisateur a liké ce commentaire
-        memoryObj.userInteraction = {
-          liked: likedBy.some(id => id && id.equals && id.equals(userId)),
-          disliked: dislikedBy.some(id => id && id.equals && id.equals(userId)),
-          isAuthor: memory.auteur && memory.auteur._id && memory.auteur._id.equals && memory.auteur._id.equals(userId)
+      withInteraction = memories.map(m => {
+        const likedBy = Array.isArray(m.liked_by) ? m.liked_by : [];
+        const dislikedBy = Array.isArray(m.disliked_by) ? m.disliked_by : [];
+        return {
+          ...m.toObject(),
+          userInteraction: {
+            liked: likedBy.some(id => id?.equals && id.equals(userId)),
+            disliked: dislikedBy.some(id => id?.equals && id.equals(userId)),
+            isAuthor: m.auteur?._id?.equals?.(userId) || false
+          }
         };
-        
-        return memoryObj;
       });
     }
-    
-    // Formater les mémoires pour la réponse
-    const formattedMemories = memoriesWithInteraction.map(memory => ({
-      id: memory._id,
-      username: memory.auteur ? `${memory.auteur.prenom || ''} ${memory.auteur.nom || ''}`.trim() : 'Utilisateur',
+
+    // Format homogène front
+    const formatted = withInteraction.map(m => ({
+      id: m._id,
+      username: m.auteur ? `${m.auteur.prenom || ''} ${m.auteur.nom || ''}`.trim() : 'Utilisateur',
       type: 'posted',
       videoTitle: '',
-      videoArtist: '', 
-      videoYear: '', 
-      imageUrl: memory.auteur && memory.auteur.photo_profil ? memory.auteur.photo_profil : '/images/default-avatar.jpg',
-      content: memory.contenu || '',
-      likes: memory.likes || 0,
-      comments: 0, 
-      userInteraction: memory.userInteraction || {
-        liked: false,
-        disliked: false,
-        isAuthor: false
-      },
-      createdAt: memory.creation_date
+      videoArtist: '',
+      videoYear: '',
+      imageUrl: m.auteur?.photo_profil || '/images/default-avatar.jpg',
+      content: m.contenu || '',
+      likes: m.likes || 0,
+      comments: 0,
+      userInteraction: m.userInteraction || { liked: false, disliked: false, isAuthor: false },
+      createdAt: m.creation_date
     }));
-    
+
     res.status(200).json({
       success: true,
-      data: formattedMemories,
+      data: formatted,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        totalPages: Math.ceil(total / parseInt(limit))
+        page: parseInt(page), limit: parseInt(limit),
+        total, totalPages: Math.ceil(total / parseInt(limit))
       }
     });
   } catch (err) {
-    console.error("Erreur lors de la récupération des souvenirs:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la récupération des souvenirs"
-    });
-  }
-};
-
-// Dans controllers/memoryController.js
-exports.getAllMemories = async (req, res) => {
-  try {
-    const memories = await Memory.find()
-      .populate('auteur', 'nom prenom photo_profil')
-      .populate('video', 'titre artiste annee')
-      .sort({ createdAt: -1 })
-      .limit(100);
-    
-    res.status(200).json({
-      success: true,
-      count: memories.length,
-      data: memories
-    });
-  } catch (error) {
-    console.error('Erreur lors de la récupération des souvenirs:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la récupération des souvenirs'
-    });
+    console.error("Erreur getVideoMemories:", err);
+    res.status(500).json({ success: false, message: "Erreur lors de la récupération des souvenirs" });
   }
 };
 
 /**
- * @desc    Ajouter un souvenir (commentaire) à une vidéo
- * @route   POST /api/videos/:id/memories
- * @access  Private
+ * GET /api/memories  (liste générale, utilisé en fallback)
+ */
+exports.getAllMemories = async (req, res) => {
+  try {
+    const memories = await Comment.find({ statut: 'ACTIF', parent_comment: null })
+      .populate('auteur', 'nom prenom photo_profil')
+      .populate('video_id', 'titre artiste annee')
+      .sort({ creation_date: -1 })
+      .limit(200);
+
+    res.status(200).json({ success: true, data: memories });
+  } catch (error) {
+    console.error('Erreur getAllMemories:', error);
+    res.status(500).json({ success: false, message: 'Erreur lors de la récupération des souvenirs' });
+  }
+};
+
+/**
+ * POST /api/videos/:id/memories
  */
 exports.addMemory = async (req, res) => {
   try {
     const { id: videoId } = req.params;
     const { contenu } = req.body;
-    
-    
     const userId = req.user._id || req.user.id;
-    
-    console.log(' Ajout de souvenir:');
-    console.log(' Video ID:', videoId);
-    console.log(' User ID:', userId);
-    console.log(' User Object:', req.user);
-    console.log(' Contenu:', contenu);
-    
-    // Validation du contenu
-    if (!contenu || contenu.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Le contenu du souvenir est requis"
-      });
+
+    if (!contenu || !contenu.trim()) {
+      return res.status(400).json({ success: false, message: "Le contenu du souvenir est requis" });
     }
-    
     if (contenu.length > 500) {
-      return res.status(400).json({
-        success: false,
-        message: "Le contenu du souvenir ne doit pas dépasser 500 caractères"
-      });
+      return res.status(400).json({ success: false, message: "Le contenu ne doit pas dépasser 500 caractères" });
     }
-    
-    // Vérifier que l'utilisateur est authentifié
-    if (!userId) {
-      console.error(' Utilisateur non identifié dans req.user');
-      return res.status(401).json({
-        success: false,
-        message: "Utilisateur non authentifié"
-      });
-    }
-    
-    // Vérifier que la vidéo existe
+    if (!userId) return res.status(401).json({ success: false, message: "Utilisateur non authentifié" });
+
     const video = await Video.findById(videoId);
-    if (!video) {
-      return res.status(404).json({
-        success: false,
-        message: "Vidéo non trouvée"
-      });
-    }
-    
-    console.log(' Vidéo trouvée:', video.titre);
-    
-    
-    const memory = new Comment({
+    if (!video) return res.status(404).json({ success: false, message: "Vidéo non trouvée" });
+
+    const memory = await Comment.create({
       contenu: contenu.trim(),
       video_id: videoId,
-      auteur: userId,  
+      auteur: userId,
       statut: 'ACTIF',
       creation_date: Date.now(),
       created_by: userId,
-      likes: 0,
-      dislikes: 0,
-      liked_by: [],
-      disliked_by: [],
-      signale_par: []
+      likes: 0, dislikes: 0, liked_by: [], disliked_by: [], signale_par: []
     });
-    
-    console.log('📝 Objet Comment avant sauvegarde:', {
-      contenu: memory.contenu,
-      video_id: memory.video_id,
-      auteur: memory.auteur,
-      statut: memory.statut
-    });
-    
-    // Sauvegarder le commentaire
-    const savedMemory = await memory.save();
-    console.log(' Souvenir sauvegardé avec ID:', savedMemory._id);
-    
-    // Incrémenter le compteur de commentaires dans les métadonnées de la vidéo
-    if (!video.meta) {
-      video.meta = {};
-    }
+
+    // Mettre à jour compteur
+    video.meta = video.meta || {};
     video.meta.commentCount = (video.meta.commentCount || 0) + 1;
     await video.save();
-    
-    console.log(' Compteur de commentaires mis à jour:', video.meta.commentCount);
-    
-    // Journal d'action (optionnel - ne pas faire échouer si ça plante)
-    try {
-      await LogAction.create({
-        type_action: "MEMOIRE_AJOUTEE",
-        description_action: `Souvenir ajouté sur la vidéo "${video.titre || 'Sans titre'}"`,
-        id_user: userId,
-        ip_address: req.ip,
-        user_agent: req.headers['user-agent'],
-        created_by: userId,
-        donnees_supplementaires: {
-          video_id: videoId,
-          video_titre: video.titre || 'Sans titre',
-          memoire_id: savedMemory._id
-        }
-      });
-    } catch (logError) {
-      console.warn(' Erreur lors du logging (non critique):', logError.message);
-    }
-    
-    // Récupérer le commentaire avec les informations de l'auteur
-    const populatedMemory = await Comment.findById(savedMemory._id)
-      .populate('auteur', 'nom prenom photo_profil');
-    
-    console.log(' Souvenir populé:', populatedMemory);
-    
+
+    const populated = await Comment.findById(memory._id).populate('auteur', 'nom prenom photo_profil');
+
     res.status(201).json({
       success: true,
       message: "Souvenir ajouté avec succès",
       data: {
-        id: populatedMemory._id,
-        username: populatedMemory.auteur ? 
-          `${populatedMemory.auteur.prenom || ''} ${populatedMemory.auteur.nom || ''}`.trim() : 
-          'Utilisateur',
-        content: populatedMemory.contenu,
-        likes: populatedMemory.likes || 0,
-        dislikes: populatedMemory.dislikes || 0,
-        createdAt: populatedMemory.creation_date,
-        userInteraction: {
-          liked: false,
-          disliked: false,
-          isAuthor: true
-        }
+        id: populated._id,
+        username: populated.auteur ? `${populated.auteur.prenom || ''} ${populated.auteur.nom || ''}`.trim() : 'Utilisateur',
+        content: populated.contenu,
+        likes: populated.likes || 0,
+        dislikes: populated.dislikes || 0,
+        createdAt: populated.creation_date,
+        userInteraction: { liked: false, disliked: false, isAuthor: true }
       }
     });
   } catch (err) {
-    console.error(" Erreur lors de l'ajout du souvenir:", err);
-    
-    // Si c'est une erreur de validation Mongoose, donner plus de détails
-    if (err.name === 'ValidationError') {
-      console.error(' Détails de validation:', err.errors);
-      return res.status(400).json({
-        success: false,
-        message: "Erreur de validation",
-        details: Object.values(err.errors).map(error => ({
-          field: error.path,
-          message: error.message,
-          value: error.value
-        }))
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de l'ajout du souvenir",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    console.error("Erreur addMemory:", err);
+    res.status(500).json({ success: false, message: "Erreur lors de l'ajout du souvenir" });
   }
 };
 
-
 /**
- * @desc    Supprimer un souvenir (commentaire)
- * @route   DELETE /api/memories/:id
- * @access  Private
+ * DELETE /api/memories/:id  (supprime un souvenir OU une réponse)
+ * - soft delete + soft delete des réponses si parent
  */
 exports.deleteMemory = async (req, res) => {
   try {
     const { id: memoryId } = req.params;
     const userId = req.user._id;
-    
-    // Vérifier que le souvenir existe et appartient à l'utilisateur ou que l'utilisateur est admin
-    const memory = await Comment.findOne({
-      _id: memoryId,
-      $or: [
-        { auteur: userId },
-        { /* Condition pour vérifier si l'utilisateur est admin (à adapter selon votre modèle) */ }
-      ]
-    });
-    
-    if (!memory) {
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir non trouvé ou permissions insuffisantes"
-      });
+
+    const memory = await Comment.findById(memoryId);
+    if (!memory) return res.status(404).json({ success: false, message: "Souvenir non trouvé" });
+
+    const isAuthor = memory.auteur?.equals?.(userId);
+    const isAdmin = req.user.role === 'admin' || 
+                    (Array.isArray(req.user.roles) && req.user.roles.some(r => r === 'admin' || r?.libelle_role === 'admin'));
+    if (!isAuthor && !isAdmin) {
+      return res.status(403).json({ success: false, message: "Action non autorisée" });
     }
-    
-    // Mise à jour du statut du commentaire (soft delete)
+
+    if (!memory.parent_comment) {
+      await Comment.updateMany(
+        { parent_comment: memoryId },
+        { statut: 'SUPPRIME', modified_date: Date.now(), modified_by: userId }
+      );
+    }
+
     memory.statut = 'SUPPRIME';
     memory.modified_date = Date.now();
     memory.modified_by = userId;
     await memory.save();
-    
-    // Décrémenter le compteur de commentaires dans les métadonnées de la vidéo
+
+    // Décrémenter le compteur de la vidéo
     const video = await Video.findById(memory.video_id);
-    if (video && video.meta && typeof video.meta.commentCount === 'number') {
+    if (video?.meta && typeof video.meta.commentCount === 'number') {
       video.meta.commentCount = Math.max(0, video.meta.commentCount - 1);
       await video.save();
     }
-    
-    // Journal d'action
-    await LogAction.create({
-      type_action: "MEMOIRE_SUPPRIMEE",
-      description_action: "Souvenir supprimé",
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        video_id: memory.video_id,
-        memoire_id: memoryId
-      }
-    });
-    
-    res.status(200).json({
-      success: true,
-      message: "Souvenir supprimé avec succès"
-    });
+
+    try {
+      await LogAction.create({
+        type_action: "MEMOIRE_SUPPRIMEE",
+        description_action: "Souvenir supprimé",
+        id_user: userId,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        created_by: userId,
+        donnees_supplementaires: { video_id: memory.video_id, memoire_id: memoryId, est_reponse: !!memory.parent_comment }
+      });
+    } catch {}
+
+    res.status(200).json({ success: true, message: "Souvenir supprimé avec succès" });
   } catch (err) {
-    console.error("Erreur lors de la suppression du souvenir:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la suppression du souvenir"
-    });
+    console.error("Erreur deleteMemory:", err);
+    res.status(500).json({ success: false, message: "Erreur lors de la suppression du souvenir" });
   }
 };
 
 /**
- * @desc    Aimer un souvenir (commentaire)
- * @route   POST /api/memories/:id/like
- * @access  Private
+ * POST /api/memories/:id/like
  */
 exports.likeMemory = async (req, res) => {
   try {
     const { id: memoryId } = req.params;
     const userId = req.user._id;
-    
-    // Vérifier que le souvenir existe
+
     const memory = await Comment.findById(memoryId);
-    if (!memory) {
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir non trouvé"
-      });
-    }
-    
-    // Initialiser les tableaux s'ils n'existent pas
-    if (!Array.isArray(memory.liked_by)) memory.liked_by = [];
-    if (!Array.isArray(memory.disliked_by)) memory.disliked_by = [];
-    
-    // Initialiser les compteurs s'ils n'existent pas
+    if (!memory) return res.status(404).json({ success: false, message: "Souvenir non trouvé" });
+
+    memory.liked_by = Array.isArray(memory.liked_by) ? memory.liked_by : [];
+    memory.disliked_by = Array.isArray(memory.disliked_by) ? memory.disliked_by : [];
     if (typeof memory.likes !== 'number') memory.likes = 0;
     if (typeof memory.dislikes !== 'number') memory.dislikes = 0;
-    
-    // Vérifier si l'utilisateur a déjà liké ou disliké ce souvenir
-    const hasLiked = memory.liked_by.some(id => id && id.equals && id.equals(userId));
-    const hasDisliked = memory.disliked_by.some(id => id && id.equals && id.equals(userId));
-    
-    // Mise à jour des likes/dislikes
+
+    const hasLiked = memory.liked_by.some(id => id?.equals?.(userId));
+    const hasDisliked = memory.disliked_by.some(id => id?.equals?.(userId));
+
     if (hasLiked) {
-      // Si déjà liké, retirer le like
       memory.liked_by = memory.liked_by.filter(id => !id.equals(userId));
       memory.likes = Math.max(0, memory.likes - 1);
     } else {
-      // Ajouter un like
       memory.liked_by.push(userId);
       memory.likes += 1;
-      
-      // Si l'utilisateur avait disliké, retirer le dislike
       if (hasDisliked) {
         memory.disliked_by = memory.disliked_by.filter(id => !id.equals(userId));
         memory.dislikes = Math.max(0, memory.dislikes - 1);
       }
     }
-    
     await memory.save();
-    
+
     res.status(200).json({
       success: true,
-      message: hasLiked ? "Like retiré avec succès" : "Like ajouté avec succès",
-      data: {
-        liked: !hasLiked,
-        disliked: false,
-        likes: memory.likes,
-        dislikes: memory.dislikes
-      }
+      message: hasLiked ? "Like retiré" : "Like ajouté",
+      data: { liked: !hasLiked, disliked: false, likes: memory.likes, dislikes: memory.dislikes }
     });
   } catch (err) {
-    console.error("Erreur lors de l'ajout/retrait du like:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de l'ajout/retrait du like"
-    });
+    console.error("Erreur likeMemory:", err);
+    res.status(500).json({ success: false, message: "Erreur lors du like" });
   }
 };
 
 /**
- * @desc    Ne pas aimer un souvenir (commentaire)
- * @route   POST /api/memories/:id/dislike
- * @access  Private
+ * POST /api/memories/:id/dislike
  */
 exports.dislikeMemory = async (req, res) => {
   try {
     const { id: memoryId } = req.params;
     const userId = req.user._id;
-    
-    // Vérifier que le souvenir existe
+
     const memory = await Comment.findById(memoryId);
-    if (!memory) {
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir non trouvé"
-      });
-    }
-    
-    // Initialiser les tableaux s'ils n'existent pas
-    if (!Array.isArray(memory.liked_by)) memory.liked_by = [];
-    if (!Array.isArray(memory.disliked_by)) memory.disliked_by = [];
-    
-    // Initialiser les compteurs s'ils n'existent pas
+    if (!memory) return res.status(404).json({ success: false, message: "Souvenir non trouvé" });
+
+    memory.liked_by = Array.isArray(memory.liked_by) ? memory.liked_by : [];
+    memory.disliked_by = Array.isArray(memory.disliked_by) ? memory.disliked_by : [];
     if (typeof memory.likes !== 'number') memory.likes = 0;
     if (typeof memory.dislikes !== 'number') memory.dislikes = 0;
-    
-    // Vérifier si l'utilisateur a déjà liké ou disliké ce souvenir
-    const hasLiked = memory.liked_by.some(id => id && id.equals && id.equals(userId));
-    const hasDisliked = memory.disliked_by.some(id => id && id.equals && id.equals(userId));
-    
-    // Mise à jour des likes/dislikes
+
+    const hasLiked = memory.liked_by.some(id => id?.equals?.(userId));
+    const hasDisliked = memory.disliked_by.some(id => id?.equals?.(userId));
+
     if (hasDisliked) {
-      // Si déjà disliké, retirer le dislike
       memory.disliked_by = memory.disliked_by.filter(id => !id.equals(userId));
       memory.dislikes = Math.max(0, memory.dislikes - 1);
     } else {
-      // Ajouter un dislike
       memory.disliked_by.push(userId);
       memory.dislikes += 1;
-      
-      // Si l'utilisateur avait liké, retirer le like
       if (hasLiked) {
         memory.liked_by = memory.liked_by.filter(id => !id.equals(userId));
         memory.likes = Math.max(0, memory.likes - 1);
       }
     }
-    
     await memory.save();
-    
+
     res.status(200).json({
       success: true,
-      message: hasDisliked ? "Dislike retiré avec succès" : "Dislike ajouté avec succès",
-      data: {
-        liked: false,
-        disliked: !hasDisliked,
-        likes: memory.likes,
-        dislikes: memory.dislikes
-      }
+      message: hasDisliked ? "Dislike retiré" : "Dislike ajouté",
+      data: { liked: false, disliked: !hasDisliked, likes: memory.likes, dislikes: memory.dislikes }
     });
   } catch (err) {
-    console.error("Erreur lors de l'ajout/retrait du dislike:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de l'ajout/retrait du dislike"
-    });
+    console.error("Erreur dislikeMemory:", err);
+    res.status(500).json({ success: false, message: "Erreur lors du dislike" });
   }
 };
 
 /**
- * @desc    Récupérer les réponses à un souvenir
- * @route   GET /api/memories/:id/replies
- * @access  Public
+ * GET /api/memories/:id/replies
  */
 exports.getMemoryReplies = async (req, res) => {
   try {
     const { id: memoryId } = req.params;
     const { page = 1, limit = 5 } = req.query;
-    
-    // Vérifier que le souvenir parent existe
+
     const parentExists = await Comment.exists({ _id: memoryId });
-    if (!parentExists) {
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir parent non trouvé"
-      });
-    }
-    
-    // Calculer le nombre de documents à sauter pour la pagination
+    if (!parentExists) return res.status(404).json({ success: false, message: "Souvenir parent non trouvé" });
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
-    // Récupérer les réponses au souvenir
-    const replies = await Comment.find({
-      parent_comment: memoryId,
-      statut: 'ACTIF'
-    })
-      .sort({ creation_date: 1 }) // Du plus ancien au plus récent pour les réponses
-      .skip(skip)
-      .limit(parseInt(limit))
-      .populate('auteur', 'nom prenom photo_profil');
-    
-    // Compter le nombre total de réponses pour la pagination
-    const total = await Comment.countDocuments({
-      parent_comment: memoryId,
-      statut: 'ACTIF'
-    });
-    
-    // Ajouter les informations d'interaction utilisateur si connecté
-    let repliesWithInteraction = replies;
+
+    const [replies, total] = await Promise.all([
+      Comment.find({ parent_comment: memoryId, statut: 'ACTIF' })
+        .sort({ creation_date: 1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('auteur', 'nom prenom photo_profil'),
+      Comment.countDocuments({ parent_comment: memoryId, statut: 'ACTIF' })
+    ]);
+
+    let withInteraction = replies;
     if (req.user) {
       const userId = req.user._id;
-      
-      repliesWithInteraction = replies.map(reply => {
-        const replyObj = reply.toObject();
-        
-        // S'assurer que les tableaux existent
-        const likedBy = Array.isArray(reply.liked_by) ? reply.liked_by : [];
-        const dislikedBy = Array.isArray(reply.disliked_by) ? reply.disliked_by : [];
-        
-        replyObj.userInteraction = {
-          liked: likedBy.some(id => id && id.equals && id.equals(userId)),
-          disliked: dislikedBy.some(id => id && id.equals && id.equals(userId)),
-          isAuthor: reply.auteur && reply.auteur._id && reply.auteur._id.equals && reply.auteur._id.equals(userId)
+      withInteraction = replies.map(r => {
+        const likedBy = Array.isArray(r.liked_by) ? r.liked_by : [];
+        const dislikedBy = Array.isArray(r.disliked_by) ? r.disliked_by : [];
+        return {
+          ...r.toObject(),
+          userInteraction: {
+            liked: likedBy.some(id => id?.equals?.(userId)),
+            disliked: dislikedBy.some(id => id?.equals?.(userId)),
+            isAuthor: r.auteur?._id?.equals?.(userId) || false
+          }
         };
-        
-        return replyObj;
       });
     }
-    
+
     res.status(200).json({
       success: true,
-      data: repliesWithInteraction,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        totalPages: Math.ceil(total / parseInt(limit))
-      }
+      data: withInteraction,
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, totalPages: Math.ceil(total / parseInt(limit)) }
     });
   } catch (err) {
-    console.error("Erreur lors de la récupération des réponses:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la récupération des réponses"
-    });
+    console.error("Erreur getMemoryReplies:", err);
+    res.status(500).json({ success: false, message: "Erreur lors de la récupération des réponses" });
   }
 };
 
 /**
- * @desc    Ajouter une réponse à un souvenir
- * @route   POST /api/memories/:id/replies
- * @access  Private
+ * POST /api/memories/:id/replies
  */
 exports.addReply = async (req, res) => {
   try {
-    const { id: memoryId } = req.params;
-    const { contenu } = req.body;
-    const userId = req.user._id;
-    
-    // Validation du contenu
-    if (!contenu || contenu.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Le contenu de la réponse est requis"
-      });
-    }
-    
-    if (contenu.length > 500) {
-      return res.status(400).json({
-        success: false,
-        message: "Le contenu de la réponse ne doit pas dépasser 500 caractères"
-      });
-    }
-    
-    // Vérifier que le souvenir parent existe
-    const parentMemory = await Comment.findById(memoryId);
-    if (!parentMemory) {
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir parent non trouvé"
-      });
-    }
-    
-    // Créer la réponse avec initialisation des tableaux
-    const reply = new Comment({
-      contenu,
-      video_id: parentMemory.video_id, // Même vidéo que le commentaire parent
-      auteur: userId,
-      parent_comment: memoryId,
-      statut: 'ACTIF',
-      created_by: userId,
-      likes: 0,
-      dislikes: 0,
-      liked_by: [],
-      disliked_by: [],
-      signale_par: []
-    });
-    
-    await reply.save();
-    
-    // Journal d'action
-    await LogAction.create({
-      type_action: "REPONSE_AJOUTEE",
-      description_action: "Réponse ajoutée à un souvenir",
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        video_id: parentMemory.video_id,
-        memoire_parent_id: memoryId,
-        reponse_id: reply._id
-      }
-    });
-    
-    // Récupérer la réponse avec les informations de l'auteur
-    const populatedReply = await Comment.findById(reply._id)
-      .populate('auteur', 'nom prenom photo_profil');
-    
-    res.status(201).json({
-      success: true,
-      message: "Réponse ajoutée avec succès",
-      data: {
-        ...(populatedReply ? populatedReply.toObject() : {}),
-        userInteraction: {
-          liked: false,
-          disliked: false,
-          isAuthor: true
-        }
-      }
-    });
-  } catch (err) {
-    console.error("Erreur lors de l'ajout de la réponse:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de l'ajout de la réponse"
-    });
-  }
-};
-
-// Ajouter dans memoryController.js
-/**
- * @desc    Récupérer les souvenirs récents (tous les commentaires)
- * @route   GET /api/public/memories/recent
- * @access  Public
- */
-exports.getRecentMemories = async (req, res) => {
-  try {
-    const { limit = 10 } = req.query;
-    
-    // Récupérer les commentaires récents
-    const memories = await Comment.find({ 
-      statut: 'ACTIF',
-      parent_comment: null // Uniquement les commentaires de premier niveau
-    })
-      .sort({ creation_date: -1 })
-      .limit(parseInt(limit))
-      .populate('auteur', 'nom prenom photo_profil')
-      .populate('video_id', 'titre artiste annee');
-    
-    // Formater les données pour le frontend
-    const formattedMemories = await Promise.all(memories.map(async (memory) => {
-      // Compter le nombre de réponses à ce commentaire
-      const replyCount = await Comment.countDocuments({ 
-        parent_comment: memory._id, 
-        statut: 'ACTIF' 
-      });
-      
-      return {
-        _id: memory._id,
-        auteur: memory.auteur || { nom: '', prenom: '' },
-        video: memory.video_id || { titre: '', artiste: '', annee: '' },
-        contenu: memory.contenu || '',
-        likes: memory.likes || 0,
-        nb_commentaires: replyCount,
-        creation_date: memory.creation_date
-      };
-    }));
-    
-    res.status(200).json({
-      success: true,
-      data: formattedMemories
-    });
-  } catch (err) {
-    console.error("Erreur lors de la récupération des souvenirs récents:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la récupération des souvenirs récents"
-    });
-  }
-};
-
-
-/**
- * @desc    Signaler un souvenir inapproprié
- * @route   POST /api/memories/:id/report
- * @access  Private
- */
-exports.reportMemory = async (req, res) => {
-  try {
-    const { id: memoryId } = req.params;
-    const { raison } = req.body;
-    const userId = req.user._id;
-    
-    // Validation de la raison
-    if (!raison || raison.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "La raison du signalement est requise"
-      });
-    }
-    
-    // Vérifier que le souvenir existe
-    const memory = await Comment.findById(memoryId);
-    if (!memory) {
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir non trouvé"
-      });
-    }
-    
-    // Initialiser le tableau des signalements s'il n'existe pas
-    if (!Array.isArray(memory.signale_par)) {
-      memory.signale_par = [];
-    }
-    
-    // Vérifier si l'utilisateur a déjà signalé ce souvenir
-    const hasReported = memory.signale_par.some(signalement => 
-      signalement && signalement.utilisateur && signalement.utilisateur.equals && signalement.utilisateur.equals(userId)
-    );
-    
-    if (hasReported) {
-      return res.status(400).json({
-        success: false,
-        message: "Vous avez déjà signalé ce souvenir"
-      });
-    }
-    
-    // Ajouter le signalement
-    memory.signale_par.push({
-      utilisateur: userId,
-      raison,
-      date: Date.now()
-    });
-    
-    // Si le nombre de signalements dépasse un seuil, modérer automatiquement
-    if (memory.signale_par.length >= 5) { 
-      memory.statut = 'MODERE';
-    }
-    
-    await memory.save();
-    
-    // Journal d'action
-    await LogAction.create({
-      type_action: "MEMOIRE_SIGNALEE",
-      description_action: "Souvenir signalé",
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        video_id: memory.video_id,
-        memoire_id: memoryId,
-        raison
-      }
-    });
-    
-    res.status(200).json({
-      success: true,
-      message: "Souvenir signalé avec succès"
-    });
-  } catch (err) {
-    console.error("Erreur lors du signalement du souvenir:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors du signalement du souvenir"
-    });
-  }
-};
-
-// controllers/memoryController.js
-exports.addReply = async (req, res) => {
-  try {
-    console.log('📝 Ajout d\'une réponse au souvenir:', req.params.id);
-    console.log('👤 Utilisateur:', req.user ? req.user.id : 'Non authentifié');
-    console.log('📄 Contenu:', req.body.contenu);
-    
     const { id: memoryId } = req.params;
     const { contenu } = req.body;
     const userId = req.user._id || req.user.id;
-    
-    // Validation du contenu
-    if (!contenu || contenu.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Le contenu de la réponse est requis"
-      });
+
+    if (!contenu || !contenu.trim()) {
+      return res.status(400).json({ success: false, message: "Le contenu de la réponse est requis" });
     }
-    
     if (contenu.length > 500) {
-      return res.status(400).json({
-        success: false,
-        message: "Le contenu de la réponse ne doit pas dépasser 500 caractères"
-      });
+      return res.status(400).json({ success: false, message: "Le contenu ne doit pas dépasser 500 caractères" });
     }
-    
-    // Vérifier que le souvenir parent existe
-    const parentMemory = await Comment.findById(memoryId);
-    if (!parentMemory) {
-      console.log('❌ Souvenir parent non trouvé:', memoryId);
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir parent non trouvé"
-      });
-    }
-    
-    console.log('✅ Souvenir parent trouvé:', parentMemory._id);
-    
-    // Créer la réponse
-    const reply = new Comment({
+
+    const parent = await Comment.findById(memoryId);
+    if (!parent) return res.status(404).json({ success: false, message: "Souvenir parent non trouvé" });
+
+    const reply = await Comment.create({
       contenu: contenu.trim(),
-      video_id: parentMemory.video_id, // Même vidéo que le commentaire parent
+      video_id: parent.video_id,
       auteur: userId,
       parent_comment: memoryId,
       statut: 'ACTIF',
       creation_date: Date.now(),
       created_by: userId,
-      likes: 0,
-      dislikes: 0,
-      liked_by: [],
-      disliked_by: [],
-      signale_par: []
+      likes: 0, dislikes: 0, liked_by: [], disliked_by: [], signale_par: []
     });
-    
-    await reply.save();
-    console.log('✅ Réponse enregistrée avec ID:', reply._id);
-    
-    // Récupérer la réponse avec les informations de l'auteur
-    const populatedReply = await Comment.findById(reply._id)
-      .populate('auteur', 'nom prenom photo_profil');
-    
-    // Retourner la réponse formatée pour l'affichage
-    const formattedReply = {
-      id: populatedReply._id,
-      content: populatedReply.contenu,
-      auteur: populatedReply.auteur,
-      likes: populatedReply.likes || 0,
-      creation_date: populatedReply.creation_date,
-      userInteraction: {
-        liked: false,
-        disliked: false,
-        isAuthor: true
-      }
-    };
-    
+
+    const populated = await Comment.findById(reply._id).populate('auteur', 'nom prenom photo_profil');
+
     res.status(201).json({
       success: true,
       message: "Réponse ajoutée avec succès",
-      data: formattedReply
-    });
-  } catch (err) {
-    console.error("❌ Erreur lors de l'ajout de la réponse:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de l'ajout de la réponse"
-    });
-  }
-};
-
-// Assurez-vous que cette fonction est exportée correctement
-exports.getMemory = async (req, res) => {
-  try {
-    const memory = await Comment.findById(req.params.id)
-      .populate('auteur', 'nom prenom photo_profil');
-    
-    if (!memory) {
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir non trouvé"
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      data: memory
-    });
-  } catch (err) {
-    console.error("Erreur lors de la récupération du souvenir:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la récupération du souvenir"
-    });
-  }
-};
-
-// Améliorer la fonction deleteMemory pour gérer les réponses
-exports.deleteMemory = async (req, res) => {
-  try {
-    const { id: memoryId } = req.params;
-    const userId = req.user._id;
-    
-    // Vérifier que le souvenir existe
-    const memory = await Comment.findById(memoryId);
-    if (!memory) {
-      return res.status(404).json({
-        success: false,
-        message: "Souvenir non trouvé"
-      });
-    }
-    
-    // Vérifier que l'utilisateur est l'auteur ou un administrateur
-    const isAuthor = memory.auteur.equals(userId);
-    const isAdmin = req.user.role === 'admin' || 
-                   (Array.isArray(req.user.roles) && 
-                    req.user.roles.some(r => 
-                      r === 'admin' || 
-                      (r.libelle_role && r.libelle_role === 'admin')
-                    ));
-    
-    if (!isAuthor && !isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: "Vous n'êtes pas autorisé à supprimer ce souvenir"
-      });
-    }
-    
-    // Si c'est un commentaire parent, supprimer aussi les réponses
-    if (!memory.parent_comment) {
-      // Soft delete - marquer toutes les réponses comme supprimées
-      await Comment.updateMany(
-        { parent_comment: memoryId },
-        { 
-          statut: 'SUPPRIME',
-          modified_date: Date.now(),
-          modified_by: userId
-        }
-      );
-    }
-    
-    // Soft delete du souvenir lui-même
-    memory.statut = 'SUPPRIME';
-    memory.modified_date = Date.now();
-    memory.modified_by = userId;
-    await memory.save();
-    
-    // Journal d'action
-    await LogAction.create({
-      type_action: "MEMOIRE_SUPPRIMEE",
-      description_action: "Souvenir supprimé",
-      id_user: userId,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent'],
-      created_by: userId,
-      donnees_supplementaires: {
-        video_id: memory.video_id,
-        memoire_id: memoryId,
-        est_reponse: !!memory.parent_comment
+      data: {
+        id: populated._id,
+        content: populated.contenu,
+        auteur: populated.auteur,
+        likes: populated.likes || 0,
+        creation_date: populated.creation_date,
+        userInteraction: { liked: false, disliked: false, isAuthor: true }
       }
     });
-    
-    res.status(200).json({
-      success: true,
-      message: "Souvenir supprimé avec succès"
-    });
   } catch (err) {
-    console.error("Erreur lors de la suppression du souvenir:", err);
-    res.status(500).json({
-      success: false,
-      message: "Une erreur est survenue lors de la suppression du souvenir"
-    });
+    console.error("Erreur addReply:", err);
+    res.status(500).json({ success: false, message: "Erreur lors de l'ajout de la réponse" });
+  }
+};
+
+/**
+ * GET /api/public/memories/recent
+ */
+exports.getRecentMemories = async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+
+    const memories = await Comment.find({ statut: 'ACTIF', parent_comment: null })
+      .sort({ creation_date: -1 })
+      .limit(parseInt(limit))
+      .populate('auteur', 'nom prenom photo_profil')
+      .populate('video_id', 'titre artiste annee');
+
+    const formatted = await Promise.all(memories.map(async (m) => {
+      const replyCount = await Comment.countDocuments({ parent_comment: m._id, statut: 'ACTIF' });
+      return {
+        _id: m._id,
+        auteur: m.auteur || { nom: '', prenom: '' },
+        video: m.video_id || { titre: '', artiste: '', annee: '' },
+        contenu: m.contenu || '',
+        likes: m.likes || 0,
+        nb_commentaires: replyCount,
+        creation_date: m.creation_date
+      };
+    }));
+
+    res.status(200).json({ success: true, data: formatted });
+  } catch (err) {
+    console.error("Erreur getRecentMemories:", err);
+    res.status(500).json({ success: false, message: "Erreur lors de la récupération des souvenirs récents" });
   }
 };

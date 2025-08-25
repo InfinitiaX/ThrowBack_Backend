@@ -411,191 +411,105 @@ exports.deleteComment = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Like or unlike a comment
- * @route   POST /api/public/comments/:commentId/like
- * @access  Private
- */
+
+
 exports.likeComment = async (req, res, next) => {
   try {
     const { commentId } = req.params;
     const userId = req.user._id;
-    
-    // Check if comment exists
+
     const comment = await Comment.findById(commentId);
     if (!comment || comment.statut !== 'ACTIF') {
-      return res.status(404).json({
-        success: false,
-        message: 'Comment not found'
-      });
+      return res.status(404).json({ success: false, message: 'Comment not found' });
     }
-    
-    // Check existing like/dislike
+
     const existingLike = await Like.findOne({
       type_entite: 'COMMENT',
       entite_id: commentId,
       utilisateur: userId
     });
-    
+
     if (existingLike) {
       if (existingLike.type_action === 'LIKE') {
-        // User is un-liking
         await existingLike.deleteOne();
         comment.likes = Math.max((comment.likes || 0) - 1, 0);
         await comment.save();
-        
-        return res.json({
-          success: true,
-          message: 'Comment unliked',
-          data: {
-            liked: false,
-            disliked: false,
-            likes: comment.likes,
-            dislikes: comment.dislikes
-          }
-        });
+        return res.json({ success: true, message: 'Comment unliked', data: { liked: false, disliked: false, likes: comment.likes, dislikes: comment.dislikes } });
       } else {
-        // User is changing from dislike to like
         existingLike.type_action = 'LIKE';
         await existingLike.save();
-        
         comment.likes = (comment.likes || 0) + 1;
         comment.dislikes = Math.max((comment.dislikes || 0) - 1, 0);
         await comment.save();
-        
-        return res.json({
-          success: true,
-          message: 'Comment liked',
-          data: {
-            liked: true,
-            disliked: false,
-            likes: comment.likes,
-            dislikes: comment.dislikes
-          }
-        });
+        return res.json({ success: true, message: 'Comment liked', data: { liked: true, disliked: false, likes: comment.likes, dislikes: comment.dislikes } });
       }
     } else {
-      // New like
       await Like.create({
         type_entite: 'COMMENT',
-        type_entite_model: 'Comment', // Ajouter explicitement le type_entite_model
-        entite_id: videoId,
+        type_entite_model: 'Comment',
+        entite_id: commentId, // ⚠️ bug corrigé (videoId -> commentId)
         utilisateur: userId,
         type_action: 'LIKE'
       });
-      
       comment.likes = (comment.likes || 0) + 1;
       await comment.save();
-      
-      res.json({
-        success: true,
-        message: 'Comment liked',
-        data: {
-          liked: true,
-          disliked: false,
-          likes: comment.likes,
-          dislikes: comment.dislikes
-        }
-      });
+      res.json({ success: true, message: 'Comment liked', data: { liked: true, disliked: false, likes: comment.likes, dislikes: comment.dislikes } });
     }
   } catch (err) {
-    console.error('Error liking comment:', err);
     next(err);
   }
 };
 
 /**
- * @desc    Dislike or un-dislike a comment
- * @route   POST /api/public/comments/:commentId/dislike
- * @access  Private
+ * POST /api/public/comments/:commentId/dislike
  */
 exports.dislikeComment = async (req, res, next) => {
   try {
     const { commentId } = req.params;
     const userId = req.user._id;
-    
-    // Check if comment exists
+
     const comment = await Comment.findById(commentId);
     if (!comment || comment.statut !== 'ACTIF') {
-      return res.status(404).json({
-        success: false,
-        message: 'Comment not found'
-      });
+      return res.status(404).json({ success: false, message: 'Comment not found' });
     }
-    
-    // Check existing like/dislike
+
     const existingLike = await Like.findOne({
       type_entite: 'COMMENT',
       entite_id: commentId,
       utilisateur: userId
     });
-    
+
     if (existingLike) {
       if (existingLike.type_action === 'DISLIKE') {
-        // User is un-disliking
         await existingLike.deleteOne();
         comment.dislikes = Math.max((comment.dislikes || 0) - 1, 0);
         await comment.save();
-        
-        return res.json({
-          success: true,
-          message: 'Comment un-disliked',
-          data: {
-            liked: false,
-            disliked: false,
-            likes: comment.likes,
-            dislikes: comment.dislikes
-          }
-        });
+        return res.json({ success: true, message: 'Comment un-disliked', data: { liked: false, disliked: false, likes: comment.likes, dislikes: comment.dislikes } });
       } else {
-        // User is changing from like to dislike
         existingLike.type_action = 'DISLIKE';
         await existingLike.save();
-        
         comment.likes = Math.max((comment.likes || 0) - 1, 0);
         comment.dislikes = (comment.dislikes || 0) + 1;
         await comment.save();
-        
-        return res.json({
-          success: true,
-          message: 'Comment disliked',
-          data: {
-            liked: false,
-            disliked: true,
-            likes: comment.likes,
-            dislikes: comment.dislikes
-          }
-        });
+        return res.json({ success: true, message: 'Comment disliked', data: { liked: false, disliked: true, likes: comment.likes, dislikes: comment.dislikes } });
       }
     } else {
-      // New dislike
       await Like.create({
         type_entite: 'COMMENT',
-        type_entite_model: 'Comment', // Ajouter explicitement le type_entite_model
-        entite_id: videoId,
+        type_entite_model: 'Comment',
+        entite_id: commentId, 
         utilisateur: userId,
-        type_action: 'LIKE'
+        type_action: 'DISLIKE' 
       });
-      
       comment.dislikes = (comment.dislikes || 0) + 1;
       await comment.save();
-      
-      res.json({
-        success: true,
-        message: 'Comment disliked',
-        data: {
-          liked: false,
-          disliked: true,
-          likes: comment.likes,
-          dislikes: comment.dislikes
-        }
-      });
+      res.json({ success: true, message: 'Comment disliked', data: { liked: false, disliked: true, likes: comment.likes, dislikes: comment.dislikes } });
     }
   } catch (err) {
-    console.error('Error disliking comment:', err);
     next(err);
   }
 };
+
 
 /**
  * @desc    Report a comment
