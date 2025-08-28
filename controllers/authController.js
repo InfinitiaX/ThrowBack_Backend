@@ -322,7 +322,7 @@ const forgotPassword = async (req, res) => {
     await user.save();
 
     // ✅ Construire un lien DIRECT vers le front
-    const base = (process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com')
+    const base = (process.env.FRONTEND_URL || 'https://throwback-connect.com')
       .replace(/\/index\.html$/i, '')
       .replace(/\/$/, '');
     const resetLink = `${base}/reset-password?token=${encodeURIComponent(resetToken)}&message=${encodeURIComponent('Valid token, you can now set your new password')}`;
@@ -454,7 +454,7 @@ const verifyPasswordReset = async (req, res) => {
     
     if (!user) {
       console.log("❌ Invalid or expired token");
-      const errorUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=invalid_token&message=Invalid or expired token`;
+      const errorUrl = `${process.env.FRONTEND_URL || 'https://throwback-connect.com'}/forgot-password?error=invalid_token&message=Invalid or expired token`;
       console.log("🔄 Redirecting to:", errorUrl);
       return res.redirect(errorUrl);
     }
@@ -462,7 +462,7 @@ const verifyPasswordReset = async (req, res) => {
     console.log("✅ Valid token for user:", user.email);
     
     // Construire l'URL de redirection
-    const redirectUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/reset-password?token=${token}&message=Valid token, you can now set your new password`;
+    const redirectUrl = `${process.env.FRONTEND_URL || 'https://throwback-connect.com'}/reset-password?token=${token}&message=Valid token, you can now set your new password`;
     
     // Log de l'URL de redirection complète
     console.log("🔄 Redirecting to reset password page:");
@@ -472,7 +472,7 @@ const verifyPasswordReset = async (req, res) => {
     res.redirect(redirectUrl);
   } catch (error) {
     console.error("❌ Password reset token verification error:", error);
-    const errorUrl = `${process.env.FRONTEND_URL || 'https://throwback-frontend.onrender.com'}/forgot-password?error=server_error&message=An error occurred`;
+    const errorUrl = `${process.env.FRONTEND_URL || 'https://throwback-connect.com'}/forgot-password?error=server_error&message=An error occurred`;
     console.log("🔄 Error redirect to:", errorUrl);
     res.redirect(errorUrl);
   }

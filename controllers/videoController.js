@@ -587,7 +587,7 @@ exports.deleteVideo = async (req, res, next) => {
       }
     }
 
-    await Video.findByIdAndDelete(videoId); // ✅ plus direct/robuste
+    await Video.findByIdAndDelete(videoId); 
 
     await LogAction.create({
       type_action: 'DELETE_VIDEO',
